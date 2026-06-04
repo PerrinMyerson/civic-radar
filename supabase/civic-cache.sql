@@ -90,3 +90,17 @@ as $$
         seen_count = public.civic_coverage_gaps.seen_count + 1,
         last_seen_at = now();
 $$;
+
+grant execute on function public.record_civic_coverage_gap(
+  text,
+  numeric,
+  numeric,
+  text,
+  text,
+  text,
+  numeric,
+  text,
+  text,
+  text,
+  integer
+) to anon, authenticated, service_role;

@@ -105,6 +105,8 @@ type FeedFilter = "all" | "House" | "Senate" | "Congress" | "GovInfo" | "Agencie
 declare global {
   interface Window {
     __CIVIC_DATA_URL__?: string;
+    __SUPABASE_ANON_KEY__?: string;
+    __SUPABASE_URL__?: string;
     L?: LeafletNamespace;
   }
 }
@@ -675,6 +677,7 @@ export default function CivicDashboard() {
     () => typeof window !== "undefined" && Boolean(window.__CIVIC_DATA_URL__),
   );
   const [geoError, setGeoError] = useState("");
+  const loggedCoverageGapsRef = useRef<Set<string>>(new Set());
 
   const refreshData = useCallback(async () => {
     setLoading(true);
@@ -737,10 +740,6 @@ export default function CivicDashboard() {
   }, [sourceQuery]);
 
   useEffect(() => {
-    if (window.__CIVIC_DATA_URL__) {
-      return;
-    }
-
     if (!navigator.geolocation) {
       const fallbackTimer = window.setTimeout(() => setLocationAttempted(true), 0);
       return () => window.clearTimeout(fallbackTimer);
@@ -815,6 +814,79 @@ export default function CivicDashboard() {
   const localMeetings = data?.municipalMeetings ?? [];
   const showFederal = scope !== "local";
   const showLocal = scope !== "federal";
+
+  useEffect(() => {
+    if (
+      !window.__CIVIC_DATA_URL__ ||
+      !window.__SUPABASE_URL__ ||
+      !window.__SUPABASE_ANON_KEY__ ||
+      !data
+    ) {
+      return;
+    }
+
+    const query = debouncedSourceQuery.trim().toLowerCase();
+    const queryHadNoMatches =
+      query.length >= 2 &&
+      !sources.some((source) =>
+        `${source.name} ${source.place} ${source.kind} ${source.slug}`
+          .toLowerCase()
+          .includes(query),
+      );
+    const nearest = userPosition
+      ? sources
+          .map((source) => ({
+            distance: distanceMiles(userPosition, { lat: source.lat, lng: source.lng }),
+            source,
+          }))
+          .sort((a, b) => a.distance - b.distance)[0]
+      : null;
+    const isLocationGap = Boolean(nearest && nearest.distance > 75);
+
+    if (!queryHadNoMatches && !isLocationGap) {
+      return;
+    }
+
+    const roundedLat =
+      userPosition === null ? null : Math.round(userPosition.lat * 10) / 10;
+    const roundedLng =
+      userPosition === null ? null : Math.round(userPosition.lng * 10) / 10;
+    const gapKey = `${query || "nearby"}:${roundedLat ?? "static"},${
+      roundedLng ?? "unknown"
+    }`;
+
+    if (loggedCoverageGapsRef.current.has(gapKey)) {
+      return;
+    }
+
+    loggedCoverageGapsRef.current.add(gapKey);
+
+    void fetch(`${window.__SUPABASE_URL__}/rest/v1/rpc/record_civic_coverage_gap`, {
+      body: JSON.stringify({
+        p_gap_key: gapKey,
+        p_lat: roundedLat,
+        p_lng: roundedLng,
+        p_nearest_distance_miles: nearest
+          ? Math.round(nearest.distance * 10) / 10
+          : null,
+        p_nearest_source_id: nearest?.source.id ?? null,
+        p_nearest_source_name: nearest?.source.name ?? null,
+        p_query: query || null,
+        p_request_city: null,
+        p_request_country: null,
+        p_request_region: null,
+        p_source_count: data.stats.municipalSources,
+      }),
+      headers: {
+        apikey: window.__SUPABASE_ANON_KEY__,
+        Authorization: `Bearer ${window.__SUPABASE_ANON_KEY__}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    }).catch(() => {
+      loggedCoverageGapsRef.current.delete(gapKey);
+    });
+  }, [data, debouncedSourceQuery, sources, userPosition]);
 
   function locateUser() {
     setGeoError("");
