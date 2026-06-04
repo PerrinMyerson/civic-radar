@@ -655,6 +655,29 @@ async function fetchJson<T>(url: string, timeoutMs = 8500): Promise<T> {
   }
 }
 
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  concurrency: number,
+  mapper: (item: T) => Promise<R>,
+) {
+  const results: R[] = [];
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const currentIndex = nextIndex;
+      nextIndex += 1;
+      results[currentIndex] = await mapper(items[currentIndex]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
+
+  return results;
+}
+
 function currentCongress(date: Date) {
   return Math.floor((date.getUTCFullYear() - 1789) / 2) + 1;
 }
@@ -1168,8 +1191,10 @@ export async function GET(request: Request) {
     Promise.all(FEDERAL_RSS_FEEDS.map((feed) => readRssFeed(feed))),
     readFederalRegister(),
     readCongressGovFeeds(now),
-    Promise.all(
-      sourceSelection.selectedSources.map((source) => readMunicipalSource(source, now)),
+    mapWithConcurrency(
+      sourceSelection.selectedSources,
+      sourceSelection.loadAll ? 6 : 8,
+      (source) => readMunicipalSource(source, now),
     ),
   ]);
 
