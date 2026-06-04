@@ -35,6 +35,12 @@ When configured, the app adds Congress.gov API feeds for latest bills, latest
 bill actions, and committee meetings/hearings. Local meeting data comes from
 public Legistar calendars for the jurisdictions listed in the API route.
 
+The dynamic `/api/civic` route supports local-source selection with `lat`, `lng`,
+`q`, `limit`, and `all=1` query parameters. The dashboard uses location when
+available, search text when provided, and otherwise loads a representative
+default set. GitHub Pages publishes a static broad snapshot because Pages cannot
+run the dynamic API route per visitor.
+
 ## Included Shape
 
 - edit site code under `app/`

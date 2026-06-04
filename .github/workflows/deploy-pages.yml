@@ -48,7 +48,7 @@ jobs:
           CONGRESS_GOV_API_KEY: ${{ secrets.CONGRESS_GOV_API_KEY }}
         run: |
           npm run start > /tmp/civic-radar-server.log 2>&1 &
-          node scripts/export-civic-data.mjs --out=gh-pages-dist/civic-data.json
+          node scripts/export-civic-data.mjs --url=http://127.0.0.1:3000/api/civic?all=1\&limit=40 --out=gh-pages-dist/civic-data.json
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

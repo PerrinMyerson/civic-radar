@@ -122,6 +122,20 @@ const FEDERAL_RSS_FEEDS = [
 
 const CONGRESS_GOV_API_ROOT = "https://api.congress.gov/v3";
 const CONGRESS_GOV_SEARCH_URL = "https://www.congress.gov/search";
+const DEFAULT_MUNICIPAL_SOURCE_IDS = new Set([
+  "seattle",
+  "kingcounty",
+  "chicago",
+  "denver",
+  "phoenix",
+  "sanjose",
+  "miamidade",
+  "boston",
+  "milwaukee",
+  "madison",
+  "nashville",
+  "baltimore",
+]);
 
 const MUNICIPAL_SOURCES = [
   {
@@ -214,6 +228,258 @@ const MUNICIPAL_SOURCES = [
     lat: 43.0731,
     lng: -89.4012,
   },
+  {
+    id: "chicago",
+    name: "Chicago City Council",
+    place: "Chicago, IL",
+    slug: "chicago",
+    kind: "City",
+    lat: 41.8781,
+    lng: -87.6298,
+  },
+  {
+    id: "longbeach",
+    name: "Long Beach City Council",
+    place: "Long Beach, CA",
+    slug: "longbeach",
+    kind: "City",
+    lat: 33.7701,
+    lng: -118.1937,
+  },
+  {
+    id: "sacramento",
+    name: "Sacramento City Council",
+    place: "Sacramento, CA",
+    slug: "sacramento",
+    kind: "City",
+    lat: 38.5816,
+    lng: -121.4944,
+  },
+  {
+    id: "fresno",
+    name: "Fresno City Council",
+    place: "Fresno, CA",
+    slug: "fresno",
+    kind: "City",
+    lat: 36.7378,
+    lng: -119.7871,
+  },
+  {
+    id: "santaclara",
+    name: "Santa Clara City Council",
+    place: "Santa Clara, CA",
+    slug: "santaclara",
+    kind: "City",
+    lat: 37.3541,
+    lng: -121.9552,
+  },
+  {
+    id: "sanmateocounty",
+    name: "San Mateo County Board",
+    place: "San Mateo County, CA",
+    slug: "sanmateocounty",
+    kind: "County",
+    lat: 37.4337,
+    lng: -122.4014,
+  },
+  {
+    id: "sanantonio",
+    name: "San Antonio City Council",
+    place: "San Antonio, TX",
+    slug: "sanantonio",
+    kind: "City",
+    lat: 29.4252,
+    lng: -98.4946,
+  },
+  {
+    id: "miamidade",
+    name: "Miami-Dade County Commission",
+    place: "Miami-Dade County, FL",
+    slug: "miamidade",
+    kind: "County",
+    lat: 25.7617,
+    lng: -80.1918,
+  },
+  {
+    id: "nashville",
+    name: "Metro Nashville Council",
+    place: "Nashville, TN",
+    slug: "nashville",
+    kind: "Metro",
+    lat: 36.1627,
+    lng: -86.7816,
+  },
+  {
+    id: "louisville",
+    name: "Louisville Metro Council",
+    place: "Louisville, KY",
+    slug: "louisville",
+    kind: "Metro",
+    lat: 38.2527,
+    lng: -85.7585,
+  },
+  {
+    id: "columbus",
+    name: "Columbus City Council",
+    place: "Columbus, OH",
+    slug: "columbus",
+    kind: "City",
+    lat: 39.9612,
+    lng: -82.9988,
+  },
+  {
+    id: "pittsburgh",
+    name: "Pittsburgh City Council",
+    place: "Pittsburgh, PA",
+    slug: "pittsburgh",
+    kind: "City",
+    lat: 40.4406,
+    lng: -79.9959,
+  },
+  {
+    id: "baltimore",
+    name: "Baltimore City Council",
+    place: "Baltimore, MD",
+    slug: "baltimore",
+    kind: "City",
+    lat: 39.2904,
+    lng: -76.6122,
+  },
+  {
+    id: "stpaul",
+    name: "Saint Paul City Council",
+    place: "Saint Paul, MN",
+    slug: "stpaul",
+    kind: "City",
+    lat: 44.9537,
+    lng: -93.09,
+  },
+  {
+    id: "bellevue",
+    name: "Bellevue City Council",
+    place: "Bellevue, WA",
+    slug: "bellevue",
+    kind: "City",
+    lat: 47.6101,
+    lng: -122.2015,
+  },
+  {
+    id: "redmond",
+    name: "Redmond City Council",
+    place: "Redmond, WA",
+    slug: "redmond",
+    kind: "City",
+    lat: 47.674,
+    lng: -122.1215,
+  },
+  {
+    id: "detroit",
+    name: "Detroit City Council",
+    place: "Detroit, MI",
+    slug: "detroit",
+    kind: "City",
+    lat: 42.3314,
+    lng: -83.0458,
+  },
+  {
+    id: "dane",
+    name: "Dane County Board",
+    place: "Dane County, WI",
+    slug: "dane",
+    kind: "County",
+    lat: 43.0186,
+    lng: -89.5498,
+  },
+  {
+    id: "dupage",
+    name: "DuPage County Board",
+    place: "DuPage County, IL",
+    slug: "dupage",
+    kind: "County",
+    lat: 41.8244,
+    lng: -88.0901,
+  },
+  {
+    id: "naperville",
+    name: "Naperville City Council",
+    place: "Naperville, IL",
+    slug: "naperville",
+    kind: "City",
+    lat: 41.7508,
+    lng: -88.1535,
+  },
+  {
+    id: "coloradosprings",
+    name: "Colorado Springs City Council",
+    place: "Colorado Springs, CO",
+    slug: "coloradosprings",
+    kind: "City",
+    lat: 38.8339,
+    lng: -104.8214,
+  },
+  {
+    id: "mesa",
+    name: "Mesa City Council",
+    place: "Mesa, AZ",
+    slug: "mesa",
+    kind: "City",
+    lat: 33.4152,
+    lng: -111.8315,
+  },
+  {
+    id: "pima",
+    name: "Pima County Board",
+    place: "Pima County, AZ",
+    slug: "pima",
+    kind: "County",
+    lat: 32.0575,
+    lng: -111.6661,
+  },
+  {
+    id: "plano",
+    name: "Plano City Council",
+    place: "Plano, TX",
+    slug: "plano",
+    kind: "City",
+    lat: 33.0198,
+    lng: -96.6989,
+  },
+  {
+    id: "greensboro",
+    name: "Greensboro City Council",
+    place: "Greensboro, NC",
+    slug: "greensboro",
+    kind: "City",
+    lat: 36.0726,
+    lng: -79.792,
+  },
+  {
+    id: "wake",
+    name: "Wake County Board",
+    place: "Wake County, NC",
+    slug: "wake",
+    kind: "County",
+    lat: 35.8032,
+    lng: -78.5661,
+  },
+  {
+    id: "mecklenburg",
+    name: "Mecklenburg County Commission",
+    place: "Mecklenburg County, NC",
+    slug: "mecklenburg",
+    kind: "County",
+    lat: 35.2633,
+    lng: -80.8544,
+  },
+  {
+    id: "richmondva",
+    name: "Richmond City Council",
+    place: "Richmond, VA",
+    slug: "richmondva",
+    kind: "City",
+    lat: 37.5407,
+    lng: -77.436,
+  },
 ] as const;
 
 function textValue(value: unknown): string {
@@ -265,6 +531,88 @@ function parseDate(value: string | null | undefined): number | null {
 
 function isoDay(date: Date): string {
   return date.toISOString().slice(0, 10);
+}
+
+function numberParam(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function distanceMiles(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+) {
+  const toRadians = (input: number) => (input * Math.PI) / 180;
+  const earthRadiusMiles = 3958.8;
+  const dLat = toRadians(to.lat - from.lat);
+  const dLng = toRadians(to.lng - from.lng);
+  const lat1 = toRadians(from.lat);
+  const lat2 = toRadians(to.lat);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.sin(dLng / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMiles * c;
+}
+
+function sourceMatches(
+  source: (typeof MUNICIPAL_SOURCES)[number],
+  normalizedQuery: string,
+) {
+  return `${source.name} ${source.place} ${source.kind} ${source.slug}`
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+function selectMunicipalSources(request: Request) {
+  const url = new URL(request.url);
+  const lat = numberParam(url.searchParams.get("lat"));
+  const lng = numberParam(url.searchParams.get("lng"));
+  const query = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
+  const loadAll = url.searchParams.get("all") === "1";
+  const limit = clamp(numberParam(url.searchParams.get("limit")) ?? 12, 4, 40);
+  const hasPosition = lat !== null && lng !== null;
+  const userPosition = hasPosition ? { lat, lng } : null;
+
+  const queryMatches =
+    query.length >= 2
+      ? MUNICIPAL_SOURCES.filter((source) => sourceMatches(source, query))
+      : [];
+
+  const pool =
+    loadAll || queryMatches.length > 0 || hasPosition
+      ? MUNICIPAL_SOURCES
+      : MUNICIPAL_SOURCES.filter((source) => DEFAULT_MUNICIPAL_SOURCE_IDS.has(source.id));
+
+  const ranked = (queryMatches.length > 0 ? queryMatches : pool)
+    .map((source) => ({
+      source,
+      distance: userPosition
+        ? distanceMiles(userPosition, { lat: source.lat, lng: source.lng })
+        : null,
+    }))
+    .sort((a, b) => {
+      if (a.distance !== null && b.distance !== null) {
+        return a.distance - b.distance;
+      }
+
+      return a.source.name.localeCompare(b.source.name);
+    });
+
+  return {
+    query,
+    hasPosition,
+    loadAll,
+    selectedSources: ranked.slice(0, limit).map(({ source }) => source),
+  };
 }
 
 async function fetchText(url: string, timeoutMs = 8500): Promise<string> {
@@ -813,13 +1161,16 @@ async function readMunicipalSource(
   }
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const now = new Date();
+  const sourceSelection = selectMunicipalSources(request);
   const [rssFeeds, federalRegister, congressGovFeeds, municipalSources] = await Promise.all([
     Promise.all(FEDERAL_RSS_FEEDS.map((feed) => readRssFeed(feed))),
     readFederalRegister(),
     readCongressGovFeeds(now),
-    Promise.all(MUNICIPAL_SOURCES.map((source) => readMunicipalSource(source, now))),
+    Promise.all(
+      sourceSelection.selectedSources.map((source) => readMunicipalSource(source, now)),
+    ),
   ]);
 
   const federalFeeds = [...congressGovFeeds, ...rssFeeds, federalRegister];
@@ -841,13 +1192,19 @@ export async function GET() {
       congressGovApiKey()
         ? "Federal data comes from the Congress.gov API, Congress.gov RSS, GovInfo RSS, and the Federal Register API."
         : "Federal data comes from Congress.gov RSS, GovInfo RSS, and the Federal Register API. Add CONGRESS_GOV_API_KEY for richer bill, action, and committee feeds.",
-      "Local meeting data comes from public Legistar calendars for the mapped jurisdictions.",
+      sourceSelection.query
+        ? `Local meeting data is loaded from matching public Legistar calendars for "${sourceSelection.query}".`
+        : sourceSelection.loadAll
+          ? "Local meeting data is loaded from a broad public Legistar calendar snapshot."
+          : sourceSelection.hasPosition
+            ? "Local meeting data is loaded from the nearest public Legistar calendars to the user's location."
+            : "Local meeting data is loaded from a representative default set of public Legistar calendars until a location or search is provided.",
       "Coverage is source-based, not exhaustive. Use the source links for official records.",
     ],
     stats: {
       federalItems: federalItems.length,
       federalFeedsLive: federalFeeds.filter((feed) => feed.status === "live").length,
-      municipalSources: municipalSources.length,
+      municipalSources: MUNICIPAL_SOURCES.length,
       municipalSourcesLive: municipalSources.filter((source) => source.status === "live")
         .length,
       municipalMeetings: municipalMeetings.length,

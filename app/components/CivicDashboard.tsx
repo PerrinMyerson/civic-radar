@@ -667,9 +667,13 @@ export default function CivicDashboard() {
   const [error, setError] = useState("");
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [sourceQuery, setSourceQuery] = useState("");
+  const [debouncedSourceQuery, setDebouncedSourceQuery] = useState("");
   const [scope, setScope] = useState<Scope>("all");
   const [feedFilter, setFeedFilter] = useState<FeedFilter>("all");
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
+  const [locationAttempted, setLocationAttempted] = useState(
+    () => typeof window !== "undefined" && Boolean(window.__CIVIC_DATA_URL__),
+  );
   const [geoError, setGeoError] = useState("");
 
   const refreshData = useCallback(async () => {
@@ -677,7 +681,26 @@ export default function CivicDashboard() {
     setError("");
 
     try {
-      const response = await fetch(window.__CIVIC_DATA_URL__ ?? "/api/civic", {
+      const staticDataUrl = window.__CIVIC_DATA_URL__;
+      let requestUrl = staticDataUrl ?? "/api/civic";
+
+      if (!staticDataUrl) {
+        const params = new URLSearchParams();
+
+        if (userPosition) {
+          params.set("lat", String(userPosition.lat));
+          params.set("lng", String(userPosition.lng));
+        }
+
+        if (debouncedSourceQuery.trim()) {
+          params.set("q", debouncedSourceQuery.trim());
+        }
+
+        params.set("limit", debouncedSourceQuery.trim() ? "20" : "12");
+        requestUrl = `/api/civic?${params}`;
+      }
+
+      const response = await fetch(requestUrl, {
         cache: "no-store",
       });
 
@@ -703,15 +726,52 @@ export default function CivicDashboard() {
     } finally {
       setLoading(false);
     }
+  }, [debouncedSourceQuery, userPosition]);
+
+  useEffect(() => {
+    const debounceTimer = window.setTimeout(() => {
+      setDebouncedSourceQuery(sourceQuery);
+    }, 350);
+
+    return () => window.clearTimeout(debounceTimer);
+  }, [sourceQuery]);
+
+  useEffect(() => {
+    if (window.__CIVIC_DATA_URL__) {
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      const fallbackTimer = window.setTimeout(() => setLocationAttempted(true), 0);
+      return () => window.clearTimeout(fallbackTimer);
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserPosition({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLocationAttempted(true);
+      },
+      () => {
+        setLocationAttempted(true);
+      },
+      { enableHighAccuracy: false, maximumAge: 600000, timeout: 5000 },
+    );
   }, []);
 
   useEffect(() => {
-    const loadTimer = window.setTimeout(() => {
+    if (!locationAttempted) {
+      return;
+    }
+
+    const refreshTimer = window.setTimeout(() => {
       void refreshData();
     }, 0);
 
-    return () => window.clearTimeout(loadTimer);
-  }, [refreshData]);
+    return () => window.clearTimeout(refreshTimer);
+  }, [locationAttempted, refreshData]);
 
   const sources = useMemo(() => data?.municipalSources ?? [], [data?.municipalSources]);
   const selectedSource = sources.find((source) => source.id === selectedSourceId);
@@ -770,8 +830,12 @@ export default function CivicDashboard() {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
+        setLocationAttempted(true);
       },
-      (positionError) => setGeoError(positionError.message),
+      (positionError) => {
+        setGeoError(positionError.message);
+        setLocationAttempted(true);
+      },
       { enableHighAccuracy: false, maximumAge: 600000, timeout: 9000 },
     );
   }
@@ -888,7 +952,7 @@ export default function CivicDashboard() {
                   <input
                     className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-zinc-400"
                     onChange={(event) => setSourceQuery(event.target.value)}
-                    placeholder="Search city, county, state"
+                    placeholder="Search all local source feeds"
                     type="search"
                     value={sourceQuery}
                   />
@@ -904,6 +968,10 @@ export default function CivicDashboard() {
                 </button>
 
                 {geoError ? <p className="mt-2 text-xs text-rose-700">{geoError}</p> : null}
+                <p className="mt-2 text-xs text-zinc-500">
+                  Loaded {sources.length} of {data?.stats.municipalSources ?? 0} local
+                  source feeds
+                </p>
               </div>
 
               <div className="mt-3 grid max-h-[640px] gap-2 overflow-auto pr-1">
