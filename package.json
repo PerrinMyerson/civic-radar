@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build && rm -rf dist/_appgen_meta && mkdir -p dist/_appgen_meta && if [ -f .openai/hosting.json ]; then cp .openai/hosting.json dist/_appgen_meta/appgarden.json; fi && if [ -d drizzle ]; then cp -R drizzle dist/_appgen_meta/drizzle; fi",
+    "build:pages": "vite build --config vite.github-pages.config.ts",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"

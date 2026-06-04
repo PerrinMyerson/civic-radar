@@ -104,6 +104,7 @@ type FeedFilter = "all" | "House" | "Senate" | "Congress" | "GovInfo" | "Agencie
 
 declare global {
   interface Window {
+    __CIVIC_DATA_URL__?: string;
     L?: LeafletNamespace;
   }
 }
@@ -676,7 +677,9 @@ export default function CivicDashboard() {
     setError("");
 
     try {
-      const response = await fetch("/api/civic", { cache: "no-store" });
+      const response = await fetch(window.__CIVIC_DATA_URL__ ?? "/api/civic", {
+        cache: "no-store",
+      });
 
       if (!response.ok) {
         throw new Error(`${response.status} ${response.statusText}`);
