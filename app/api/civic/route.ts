@@ -480,7 +480,211 @@ const MUNICIPAL_SOURCES = [
     lat: 37.5407,
     lng: -77.436,
   },
+  {
+    id: "huntingtonbeach",
+    name: "Huntington Beach City Council",
+    place: "Huntington Beach, CA",
+    slug: "huntingtonbeach",
+    kind: "City",
+    lat: 33.6595,
+    lng: -117.9988,
+  },
+  {
+    id: "monterey",
+    name: "Monterey City Council",
+    place: "Monterey, CA",
+    slug: "monterey",
+    kind: "City",
+    lat: 36.6002,
+    lng: -121.8947,
+  },
+  {
+    id: "mountainview",
+    name: "Mountain View City Council",
+    place: "Mountain View, CA",
+    slug: "mountainview",
+    kind: "City",
+    lat: 37.3861,
+    lng: -122.0839,
+  },
+  {
+    id: "hayward",
+    name: "Hayward City Council",
+    place: "Hayward, CA",
+    slug: "hayward",
+    kind: "City",
+    lat: 37.6688,
+    lng: -122.0808,
+  },
+  {
+    id: "napa",
+    name: "Napa City Council",
+    place: "Napa, CA",
+    slug: "napa",
+    kind: "City",
+    lat: 38.2975,
+    lng: -122.2869,
+  },
+  {
+    id: "stockton",
+    name: "Stockton City Council",
+    place: "Stockton, CA",
+    slug: "stockton",
+    kind: "City",
+    lat: 37.9577,
+    lng: -121.2908,
+  },
+  {
+    id: "visalia",
+    name: "Visalia City Council",
+    place: "Visalia, CA",
+    slug: "visalia",
+    kind: "City",
+    lat: 36.3302,
+    lng: -119.2921,
+  },
+  {
+    id: "kansascity",
+    name: "Kansas City Council",
+    place: "Kansas City, MO",
+    slug: "kansascity",
+    kind: "City",
+    lat: 39.0997,
+    lng: -94.5786,
+  },
 ] as const;
+
+type CacheEntry = {
+  expiresAt: number;
+  payload: unknown;
+};
+
+const memoryCache = new Map<string, CacheEntry>();
+
+function supabaseConfig() {
+  const url = process.env.SUPABASE_URL?.replace(/\/$/, "");
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??
+    process.env.SUPABASE_SERVICE_KEY ??
+    "";
+
+  if (!url || !key || process.env.SUPABASE_CACHE_ENABLED === "false") {
+    return null;
+  }
+
+  return { key, url };
+}
+
+function cacheTtlMs(url: string) {
+  if (url.includes("webapi.legistar.com")) {
+    return 30 * 60 * 1000;
+  }
+
+  if (url.includes("api.congress.gov")) {
+    return 15 * 60 * 1000;
+  }
+
+  if (url.includes("federalregister.gov")) {
+    return 15 * 60 * 1000;
+  }
+
+  return 10 * 60 * 1000;
+}
+
+async function getSupabaseCache(cacheKey: string) {
+  const config = supabaseConfig();
+
+  if (!config) {
+    return undefined;
+  }
+
+  try {
+    const url = new URL(`${config.url}/rest/v1/civic_external_cache`);
+    url.searchParams.set("cache_key", `eq.${cacheKey}`);
+    url.searchParams.set("select", "payload,expires_at");
+    url.searchParams.set("limit", "1");
+
+    const response = await fetch(url, {
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+      },
+    });
+
+    if (!response.ok) {
+      return undefined;
+    }
+
+    const rows = (await response.json()) as Array<{
+      expires_at?: string;
+      payload?: unknown;
+    }>;
+    const row = rows[0];
+
+    if (!row?.expires_at || Date.parse(row.expires_at) <= Date.now()) {
+      return undefined;
+    }
+
+    return row.payload;
+  } catch {
+    return undefined;
+  }
+}
+
+async function setSupabaseCache(cacheKey: string, payload: unknown, ttlMs: number) {
+  const config = supabaseConfig();
+
+  if (!config) {
+    return;
+  }
+
+  try {
+    await fetch(`${config.url}/rest/v1/civic_external_cache?on_conflict=cache_key`, {
+      body: JSON.stringify({
+        cache_key: cacheKey,
+        expires_at: new Date(Date.now() + ttlMs).toISOString(),
+        payload,
+        updated_at: new Date().toISOString(),
+      }),
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      },
+      method: "POST",
+    });
+  } catch {
+    // Cache writes are best-effort; source fetches should still succeed.
+  }
+}
+
+async function getCachedValue<T>(cacheKey: string): Promise<T | undefined> {
+  const memoryEntry = memoryCache.get(cacheKey);
+
+  if (memoryEntry && memoryEntry.expiresAt > Date.now()) {
+    return memoryEntry.payload as T;
+  }
+
+  memoryCache.delete(cacheKey);
+
+  const supabaseValue = await getSupabaseCache(cacheKey);
+
+  if (supabaseValue !== undefined) {
+    return supabaseValue as T;
+  }
+
+  return undefined;
+}
+
+async function setCachedValue(cacheKey: string, payload: unknown, ttlMs: number) {
+  memoryCache.set(cacheKey, {
+    expiresAt: Date.now() + ttlMs,
+    payload,
+  });
+
+  await setSupabaseCache(cacheKey, payload, ttlMs);
+}
 
 function textValue(value: unknown): string {
   if (typeof value === "string" || typeof value === "number") {
@@ -578,7 +782,7 @@ function selectMunicipalSources(request: Request) {
   const lng = numberParam(url.searchParams.get("lng"));
   const query = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
   const loadAll = url.searchParams.get("all") === "1";
-  const limit = clamp(numberParam(url.searchParams.get("limit")) ?? 12, 4, 40);
+  const limit = clamp(numberParam(url.searchParams.get("limit")) ?? 12, 4, 60);
   const hasPosition = lat !== null && lng !== null;
   const userPosition = hasPosition ? { lat, lng } : null;
 
@@ -616,6 +820,13 @@ function selectMunicipalSources(request: Request) {
 }
 
 async function fetchText(url: string, timeoutMs = 8500): Promise<string> {
+  const cacheKey = `text:${url}`;
+  const cached = await getCachedValue<string>(cacheKey);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -629,13 +840,22 @@ async function fetchText(url: string, timeoutMs = 8500): Promise<string> {
       throw new Error(`${response.status} ${response.statusText}`);
     }
 
-    return await response.text();
+    const text = await response.text();
+    await setCachedValue(cacheKey, text, cacheTtlMs(url));
+    return text;
   } finally {
     clearTimeout(timeout);
   }
 }
 
 async function fetchJson<T>(url: string, timeoutMs = 8500): Promise<T> {
+  const cacheKey = `json:${url}`;
+  const cached = await getCachedValue<T>(cacheKey);
+
+  if (cached !== undefined) {
+    return cached;
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -649,7 +869,9 @@ async function fetchJson<T>(url: string, timeoutMs = 8500): Promise<T> {
       throw new Error(`${response.status} ${response.statusText}`);
     }
 
-    return (await response.json()) as T;
+    const json = (await response.json()) as T;
+    await setCachedValue(cacheKey, json, cacheTtlMs(url));
+    return json;
   } finally {
     clearTimeout(timeout);
   }
@@ -1224,6 +1446,9 @@ export async function GET(request: Request) {
           : sourceSelection.hasPosition
             ? "Local meeting data is loaded from the nearest public Legistar calendars to the user's location."
             : "Local meeting data is loaded from a representative default set of public Legistar calendars until a location or search is provided.",
+      supabaseConfig()
+        ? "External source responses are cached in Supabase with source-specific TTLs."
+        : "External source responses use an in-memory TTL cache; configure Supabase for persistent caching.",
       "Coverage is source-based, not exhaustive. Use the source links for official records.",
     ],
     stats: {

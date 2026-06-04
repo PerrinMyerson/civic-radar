@@ -41,6 +41,20 @@ available, search text when provided, and otherwise loads a representative
 default set. GitHub Pages publishes a static broad snapshot because Pages cannot
 run the dynamic API route per visitor.
 
+### Supabase Cache
+
+External source responses are cached in memory by default. To make that cache
+persistent across serverless/edge instances and deployments, create the table in
+`supabase/civic-cache.sql`, then set these runtime secrets:
+
+```bash
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+```
+
+Set `SUPABASE_CACHE_ENABLED=false` to disable Supabase while keeping the
+in-memory fallback.
+
 ## Included Shape
 
 - edit site code under `app/`
