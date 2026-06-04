@@ -41,6 +41,7 @@ yarn-error.log*
 next-env.d.ts
 /dist/
 /gh-pages-dist/
+/supabase/.temp/
 /.wrangler/
 /.vinext/
 
