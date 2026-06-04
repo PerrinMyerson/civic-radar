@@ -26,6 +26,60 @@ type LegistarEvent = {
   EventComment?: string | null;
 };
 
+type FederalFeedItem = {
+  id: string;
+  title: string;
+  summary: string;
+  url: string;
+  published: string;
+  source: string;
+  chamber: string;
+};
+
+type FederalFeedResult = {
+  id: string;
+  source: string;
+  chamber: string;
+  sourceUrl: string;
+  updated: string;
+  description: string;
+  items: FederalFeedItem[];
+  status: "live" | "error";
+  error?: string;
+};
+
+type CongressGovBill = {
+  congress?: number;
+  latestAction?: {
+    actionDate?: string;
+    text?: string;
+  };
+  number?: string;
+  originChamber?: string;
+  title?: string;
+  type?: string;
+  updateDate?: string;
+  url?: string;
+};
+
+type CongressGovCommitteeMeeting = {
+  chamber?: string;
+  congress?: number;
+  date?: string;
+  eventId?: number | string;
+  meetingStatus?: string;
+  title?: string;
+  type?: string;
+  updateDate?: string;
+  url?: string;
+};
+
+type CongressGovAction = {
+  actionDate?: string;
+  text?: string;
+  type?: string;
+};
+
 const rssParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
@@ -65,6 +119,9 @@ const FEDERAL_RSS_FEEDS = [
     url: "https://www.govinfo.gov/rss/bills.xml",
   },
 ] as const;
+
+const CONGRESS_GOV_API_ROOT = "https://api.congress.gov/v3";
+const CONGRESS_GOV_SEARCH_URL = "https://www.congress.gov/search";
 
 const MUNICIPAL_SOURCES = [
   {
@@ -250,7 +307,72 @@ async function fetchJson<T>(url: string, timeoutMs = 8500): Promise<T> {
   }
 }
 
-async function readRssFeed(feed: (typeof FEDERAL_RSS_FEEDS)[number]) {
+function currentCongress(date: Date) {
+  return Math.floor((date.getUTCFullYear() - 1789) / 2) + 1;
+}
+
+function congressGovApiKey() {
+  return process.env.CONGRESS_GOV_API_KEY?.trim() ?? "";
+}
+
+function congressGovUrl(path: string, apiKey: string, params: Record<string, string> = {}) {
+  const url = new URL(`${CONGRESS_GOV_API_ROOT}${path}`);
+  url.searchParams.set("api_key", apiKey);
+  url.searchParams.set("format", "json");
+
+  Object.entries(params).forEach(([key, value]) => {
+    url.searchParams.set(key, value);
+  });
+
+  return url.toString();
+}
+
+function congressSearchUrl(query: string) {
+  const url = new URL(CONGRESS_GOV_SEARCH_URL);
+  url.searchParams.set("q", query);
+  return url.toString();
+}
+
+function billTypeSlug(type: string) {
+  const normalized = type.toLowerCase();
+
+  return (
+    {
+      hconres: "house-concurrent-resolution",
+      hjres: "house-joint-resolution",
+      hr: "house-bill",
+      hres: "house-resolution",
+      s: "senate-bill",
+      sconres: "senate-concurrent-resolution",
+      sjres: "senate-joint-resolution",
+      sres: "senate-resolution",
+    }[normalized] ?? normalized
+  );
+}
+
+function billPublicUrl(bill: CongressGovBill) {
+  if (bill.congress && bill.type && bill.number) {
+    return `https://www.congress.gov/bill/${bill.congress}th-congress/${billTypeSlug(
+      bill.type,
+    )}/${bill.number}`;
+  }
+
+  return bill.url ?? congressSearchUrl(bill.title ?? "latest bills");
+}
+
+function committeeMeetingUrl(meeting: CongressGovCommitteeMeeting) {
+  if (meeting.congress && meeting.chamber && meeting.eventId) {
+    return congressSearchUrl(
+      `${meeting.congress} ${meeting.chamber} committee meeting ${meeting.eventId}`,
+    );
+  }
+
+  return meeting.url ?? congressSearchUrl(meeting.title ?? "committee meeting");
+}
+
+async function readRssFeed(
+  feed: (typeof FEDERAL_RSS_FEEDS)[number],
+): Promise<FederalFeedResult> {
   try {
     const xml = await fetchText(feed.url);
     const parsed = rssParser.parse(xml);
@@ -304,7 +426,7 @@ async function readRssFeed(feed: (typeof FEDERAL_RSS_FEEDS)[number]) {
   }
 }
 
-async function readFederalRegister() {
+async function readFederalRegister(): Promise<FederalFeedResult> {
   const url =
     "https://www.federalregister.gov/api/v1/documents?per_page=8&order=newest";
 
@@ -355,6 +477,227 @@ async function readFederalRegister() {
       error: error instanceof Error ? error.message : "Unable to load feed",
     };
   }
+}
+
+async function readCongressGovBills(
+  apiKey: string,
+  congress: number,
+): Promise<FederalFeedResult> {
+  const sourceUrl = "https://www.congress.gov/search?search-source=current-congress";
+
+  try {
+    const payload = await fetchJson<{ bills?: CongressGovBill[] }>(
+      congressGovUrl(`/bill/${congress}`, apiKey, { limit: "10" }),
+    );
+
+    return {
+      id: "congress-gov-latest-bills",
+      source: "Congress.gov Latest Bills",
+      chamber: "Congress",
+      sourceUrl,
+      updated: "",
+      description: "Latest bill records and chamber activity from the Congress.gov API.",
+      items: (payload.bills ?? []).map((bill, index) => ({
+        id: bill.url ?? `${bill.type ?? "bill"}-${bill.number ?? index}`,
+        title: cleanSummary(
+          [bill.type, bill.number, bill.title].filter(Boolean).join(" "),
+          160,
+        ),
+        summary: cleanSummary(bill.latestAction?.text ?? "No latest action text", 260),
+        url: billPublicUrl(bill),
+        published: bill.latestAction?.actionDate ?? bill.updateDate ?? "",
+        source: "Congress.gov",
+        chamber: bill.originChamber ?? "Congress",
+      })),
+      status: "live",
+    };
+  } catch (error) {
+    return {
+      id: "congress-gov-latest-bills",
+      source: "Congress.gov Latest Bills",
+      chamber: "Congress",
+      sourceUrl,
+      updated: "",
+      description: "",
+      items: [],
+      status: "error",
+      error: error instanceof Error ? error.message : "Unable to load Congress.gov bills",
+    };
+  }
+}
+
+async function readCongressGovBillActions(
+  apiKey: string,
+  congress: number,
+): Promise<FederalFeedResult> {
+  const sourceUrl = "https://www.congress.gov/search?search-source=current-congress";
+
+  try {
+    const payload = await fetchJson<{ bills?: CongressGovBill[] }>(
+      congressGovUrl(`/bill/${congress}`, apiKey, { limit: "20" }),
+    );
+
+    const actionGroups = await Promise.all(
+      (payload.bills ?? [])
+        .filter((bill) => bill.type && bill.number)
+        .slice(0, 6)
+        .map(async (bill) => {
+          try {
+            const actionsPayload = await fetchJson<{ actions?: CongressGovAction[] }>(
+              congressGovUrl(
+                `/bill/${congress}/${bill.type?.toLowerCase()}/${bill.number}/actions`,
+                apiKey,
+                { limit: "5" },
+              ),
+            );
+
+            return (actionsPayload.actions ?? []).map((action) => ({ action, bill }));
+          } catch {
+            return [];
+          }
+        }),
+    );
+
+    const items = actionGroups
+      .flat()
+      .sort((a, b) => {
+        const aTime = parseDate(a.action.actionDate) ?? 0;
+        const bTime = parseDate(b.action.actionDate) ?? 0;
+        return bTime - aTime;
+      })
+      .slice(0, 10)
+      .map(({ action, bill }, index) => ({
+        id: `action-${bill.type ?? "bill"}-${bill.number ?? index}-${
+          action.actionDate ?? index
+        }-${index}`,
+        title: cleanSummary(
+          `${bill.type ?? "Bill"} ${bill.number ?? ""}: ${
+            action.text ?? "Congressional action"
+          }`,
+          160,
+        ),
+        summary: cleanSummary(
+          [action.type, bill.title].filter(Boolean).join(" · "),
+          260,
+        ),
+        url: billPublicUrl(bill),
+        published: action.actionDate ?? bill.latestAction?.actionDate ?? "",
+        source: "Congress.gov",
+        chamber: bill.originChamber ?? "Congress",
+      }));
+
+    return {
+      id: "congress-gov-bill-actions",
+      source: "Congress.gov Bill Actions",
+      chamber: "Congress",
+      sourceUrl,
+      updated: "",
+      description: "Newest recorded actions on current congressional bills.",
+      items,
+      status: "live",
+    };
+  } catch (error) {
+    return {
+      id: "congress-gov-bill-actions",
+      source: "Congress.gov Bill Actions",
+      chamber: "Congress",
+      sourceUrl,
+      updated: "",
+      description: "",
+      items: [],
+      status: "error",
+      error: error instanceof Error ? error.message : "Unable to load bill actions",
+    };
+  }
+}
+
+async function readCongressGovCommitteeMeetings(
+  apiKey: string,
+  congress: number,
+): Promise<FederalFeedResult> {
+  const sourceUrl =
+    "https://www.congress.gov/committee-schedule/daily/by-committee";
+
+  try {
+    const [house, senate] = await Promise.all([
+      fetchJson<{ committeeMeetings?: CongressGovCommitteeMeeting[] }>(
+        congressGovUrl(`/committee-meeting/${congress}/house`, apiKey, { limit: "8" }),
+      ),
+      fetchJson<{ committeeMeetings?: CongressGovCommitteeMeeting[] }>(
+        congressGovUrl(`/committee-meeting/${congress}/senate`, apiKey, { limit: "8" }),
+      ),
+    ]);
+
+    const meetings = [
+      ...(house.committeeMeetings ?? []),
+      ...(senate.committeeMeetings ?? []),
+    ]
+      .sort((a, b) => {
+        const aTime = parseDate(a.date ?? a.updateDate) ?? 0;
+        const bTime = parseDate(b.date ?? b.updateDate) ?? 0;
+        return bTime - aTime;
+      })
+      .slice(0, 10);
+
+    return {
+      id: "congress-gov-committee-meetings",
+      source: "Congress.gov Committee Meetings",
+      chamber: "Congress",
+      sourceUrl,
+      updated: "",
+      description: "Current House and Senate committee meetings, hearings, and markups.",
+      items: meetings.map((meeting, index) => ({
+        id: meeting.url ?? `committee-meeting-${meeting.eventId ?? index}`,
+        title: cleanSummary(meeting.title ?? "Committee meeting", 160),
+        summary: cleanSummary(
+          [
+            meeting.chamber,
+            meeting.type,
+            meeting.meetingStatus,
+          ]
+            .filter(Boolean)
+            .join(" · "),
+          220,
+        ),
+        url: committeeMeetingUrl(meeting),
+        published: meeting.date ?? meeting.updateDate ?? "",
+        source: "Congress.gov",
+        chamber: meeting.chamber ?? "Congress",
+      })),
+      status: "live",
+    };
+  } catch (error) {
+    return {
+      id: "congress-gov-committee-meetings",
+      source: "Congress.gov Committee Meetings",
+      chamber: "Congress",
+      sourceUrl,
+      updated: "",
+      description: "",
+      items: [],
+      status: "error",
+      error:
+        error instanceof Error
+          ? error.message
+          : "Unable to load committee meetings",
+    };
+  }
+}
+
+async function readCongressGovFeeds(now: Date): Promise<FederalFeedResult[]> {
+  const apiKey = congressGovApiKey();
+
+  if (!apiKey) {
+    return [];
+  }
+
+  const congress = currentCongress(now);
+
+  return await Promise.all([
+    readCongressGovBills(apiKey, congress),
+    readCongressGovBillActions(apiKey, congress),
+    readCongressGovCommitteeMeetings(apiKey, congress),
+  ]);
 }
 
 function eventStatus(event: LegistarEvent): string {
@@ -472,13 +815,14 @@ async function readMunicipalSource(
 
 export async function GET() {
   const now = new Date();
-  const [rssFeeds, federalRegister, municipalSources] = await Promise.all([
+  const [rssFeeds, federalRegister, congressGovFeeds, municipalSources] = await Promise.all([
     Promise.all(FEDERAL_RSS_FEEDS.map((feed) => readRssFeed(feed))),
     readFederalRegister(),
+    readCongressGovFeeds(now),
     Promise.all(MUNICIPAL_SOURCES.map((source) => readMunicipalSource(source, now))),
   ]);
 
-  const federalFeeds = [...rssFeeds, federalRegister];
+  const federalFeeds = [...congressGovFeeds, ...rssFeeds, federalRegister];
   const federalItems = federalFeeds.flatMap((feed) => feed.items);
   const municipalMeetings = municipalSources.flatMap((source) =>
     source.events.map((event) => ({
@@ -494,7 +838,9 @@ export async function GET() {
   return Response.json({
     generatedAt: now.toISOString(),
     sourceNotes: [
-      "Federal data comes from Congress.gov RSS, GovInfo RSS, and the Federal Register API.",
+      congressGovApiKey()
+        ? "Federal data comes from the Congress.gov API, Congress.gov RSS, GovInfo RSS, and the Federal Register API."
+        : "Federal data comes from Congress.gov RSS, GovInfo RSS, and the Federal Register API. Add CONGRESS_GOV_API_KEY for richer bill, action, and committee feeds.",
       "Local meeting data comes from public Legistar calendars for the mapped jurisdictions.",
       "Coverage is source-based, not exhaustive. Use the source links for official records.",
     ],

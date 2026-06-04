@@ -18,6 +18,23 @@ npm run build
 
 This starter does not use `wrangler.jsonc`.
 
+## Civic Radar Data Sources
+
+Civic Radar loads public federal and local civic activity through
+`app/api/civic/route.ts`.
+
+Federal data works without configuration through Congress.gov RSS, GovInfo RSS,
+and the Federal Register API. For richer congressional data, create a
+Congress.gov API key through api.data.gov, then set:
+
+```bash
+CONGRESS_GOV_API_KEY=your_key_here
+```
+
+When configured, the app adds Congress.gov API feeds for latest bills, latest
+bill actions, and committee meetings/hearings. Local meeting data comes from
+public Legistar calendars for the jurisdictions listed in the API route.
+
 ## Included Shape
 
 - edit site code under `app/`
