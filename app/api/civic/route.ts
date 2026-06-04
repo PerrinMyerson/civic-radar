@@ -122,6 +122,7 @@ const FEDERAL_RSS_FEEDS = [
 
 const CONGRESS_GOV_API_ROOT = "https://api.congress.gov/v3";
 const CONGRESS_GOV_SEARCH_URL = "https://www.congress.gov/search";
+const COVERAGE_GAP_DISTANCE_MILES = 75;
 const DEFAULT_MUNICIPAL_SOURCE_IDS = new Set([
   "seattle",
   "kingcounty",
@@ -778,8 +779,15 @@ function sourceMatches(
 
 function selectMunicipalSources(request: Request) {
   const url = new URL(request.url);
-  const lat = numberParam(url.searchParams.get("lat"));
-  const lng = numberParam(url.searchParams.get("lng"));
+  const header = (name: string) => request.headers.get(name);
+  const lat =
+    numberParam(url.searchParams.get("lat")) ??
+    numberParam(header("cf-iplatitude")) ??
+    numberParam(header("x-vercel-ip-latitude"));
+  const lng =
+    numberParam(url.searchParams.get("lng")) ??
+    numberParam(header("cf-iplongitude")) ??
+    numberParam(header("x-vercel-ip-longitude"));
   const query = url.searchParams.get("q")?.trim().toLowerCase() ?? "";
   const loadAll = url.searchParams.get("all") === "1";
   const limit = clamp(numberParam(url.searchParams.get("limit")) ?? 12, 4, 60);
@@ -810,13 +818,108 @@ function selectMunicipalSources(request: Request) {
 
       return a.source.name.localeCompare(b.source.name);
     });
+  const nearestOverall = userPosition
+    ? MUNICIPAL_SOURCES.map((source) => ({
+        source,
+        distance: distanceMiles(userPosition, { lat: source.lat, lng: source.lng }),
+      })).sort((a, b) => a.distance - b.distance)[0]
+    : null;
 
   return {
     query,
     hasPosition,
     loadAll,
+    nearestDistance: nearestOverall?.distance ?? null,
+    nearestSource: nearestOverall?.source ?? null,
+    queryHadNoMatches: query.length >= 2 && queryMatches.length === 0,
+    requestLat: lat,
+    requestLng: lng,
     selectedSources: ranked.slice(0, limit).map(({ source }) => source),
   };
+}
+
+function requestGeoHeaders(request: Request) {
+  const header = (name: string) => request.headers.get(name)?.trim() || null;
+  const decodeHeader = (value: string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+
+  return {
+    city: decodeHeader(header("cf-ipcity") ?? header("x-vercel-ip-city")),
+    country: decodeHeader(header("cf-ipcountry") ?? header("x-vercel-ip-country")),
+    region: decodeHeader(header("cf-region") ?? header("x-vercel-ip-country-region")),
+  };
+}
+
+function roundedCoord(value: number | null) {
+  return value === null ? null : Math.round(value * 10) / 10;
+}
+
+async function recordCoverageGap(
+  request: Request,
+  selection: ReturnType<typeof selectMunicipalSources>,
+) {
+  const config = supabaseConfig();
+
+  if (!config || selection.loadAll) {
+    return;
+  }
+
+  const isLocationGap =
+    selection.hasPosition &&
+    (selection.nearestDistance === null ||
+      selection.nearestDistance > COVERAGE_GAP_DISTANCE_MILES);
+  const isSearchGap = selection.queryHadNoMatches;
+
+  if (!isLocationGap && !isSearchGap) {
+    return;
+  }
+
+  const headers = requestGeoHeaders(request);
+  const roundedLat = roundedCoord(selection.requestLat);
+  const roundedLng = roundedCoord(selection.requestLng);
+  const locationKey =
+    roundedLat !== null && roundedLng !== null
+      ? `${roundedLat},${roundedLng}`
+      : [headers.country, headers.region, headers.city].filter(Boolean).join(":");
+  const gapKey = `${selection.query || "nearby"}:${locationKey || "unknown"}`;
+
+  try {
+    await fetch(`${config.url}/rest/v1/rpc/record_civic_coverage_gap`, {
+      body: JSON.stringify({
+        p_gap_key: gapKey,
+        p_lat: roundedLat,
+        p_lng: roundedLng,
+        p_nearest_distance_miles:
+          selection.nearestDistance === null
+            ? null
+            : Math.round(selection.nearestDistance * 10) / 10,
+        p_nearest_source_id: selection.nearestSource?.id ?? null,
+        p_nearest_source_name: selection.nearestSource?.name ?? null,
+        p_query: selection.query || null,
+        p_request_city: headers.city,
+        p_request_country: headers.country,
+        p_request_region: headers.region,
+        p_source_count: MUNICIPAL_SOURCES.length,
+      }),
+      headers: {
+        apikey: config.key,
+        Authorization: `Bearer ${config.key}`,
+        "Content-Type": "application/json",
+      },
+      method: "POST",
+    });
+  } catch {
+    // Coverage-gap tracking is best-effort and should never block feed loading.
+  }
 }
 
 async function fetchText(url: string, timeoutMs = 8500): Promise<string> {
@@ -1409,7 +1512,12 @@ async function readMunicipalSource(
 export async function GET(request: Request) {
   const now = new Date();
   const sourceSelection = selectMunicipalSources(request);
-  const [rssFeeds, federalRegister, congressGovFeeds, municipalSources] = await Promise.all([
+  const [
+    rssFeeds,
+    federalRegister,
+    congressGovFeeds,
+    municipalSources,
+  ] = await Promise.all([
     Promise.all(FEDERAL_RSS_FEEDS.map((feed) => readRssFeed(feed))),
     readFederalRegister(),
     readCongressGovFeeds(now),
@@ -1418,6 +1526,7 @@ export async function GET(request: Request) {
       sourceSelection.loadAll ? 6 : 8,
       (source) => readMunicipalSource(source, now),
     ),
+    recordCoverageGap(request, sourceSelection),
   ]);
 
   const federalFeeds = [...congressGovFeeds, ...rssFeeds, federalRegister];
@@ -1449,6 +1558,9 @@ export async function GET(request: Request) {
       supabaseConfig()
         ? "External source responses are cached in Supabase with source-specific TTLs."
         : "External source responses use an in-memory TTL cache; configure Supabase for persistent caching.",
+      supabaseConfig()
+        ? "Sparse location and unmatched-search coverage gaps are logged to Supabase without storing raw IP addresses."
+        : "Coverage-gap logging is disabled until Supabase is configured.",
       "Coverage is source-based, not exhaustive. Use the source links for official records.",
     ],
     stats: {
