@@ -1,0 +1,94 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f5f7f4;
+  --foreground: #181f1b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+a,
+button,
+input {
+  letter-spacing: 0;
+}
+
+button,
+a {
+  touch-action: manipulation;
+}
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.leaflet-container {
+  z-index: 0;
+  font: inherit;
+}
+
+.civic-marker-shell {
+  border: 0;
+  background: transparent;
+}
+
+.civic-marker {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow:
+    0 8px 20px rgb(24 31 27 / 20%),
+    0 0 0 1px rgb(24 31 27 / 12%);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.civic-marker-live {
+  background: #0f766e;
+}
+
+.civic-marker-quiet {
+  background: #d97706;
+}
+
+.civic-marker-stale,
+.civic-marker-error {
+  background: #71717a;
+}
+
+.civic-marker-selected {
+  background: #2563eb;
+  box-shadow:
+    0 10px 24px rgb(37 99 235 / 30%),
+    0 0 0 6px rgb(37 99 235 / 18%);
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+}
