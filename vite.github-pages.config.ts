@@ -1,5 +1,9 @@
 import react from "@vitejs/plugin-react";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+
+const rootDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   base: "/civic-radar/",
@@ -7,6 +11,12 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     outDir: "../gh-pages-dist",
+    rollupOptions: {
+      input: {
+        index: resolve(rootDir, "github-pages/index.html"),
+        methodology: resolve(rootDir, "github-pages/methodology.html"),
+      },
+    },
   },
   plugins: [react()],
 });

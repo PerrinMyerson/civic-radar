@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Civic Radar",
   description:
-    "A live civic feed dashboard with account watchlists, policy briefs, and anonymous civic signals.",
+    "A resident-first civic aid dashboard with watchlists, evidence-bound briefs, and anonymous public signals.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

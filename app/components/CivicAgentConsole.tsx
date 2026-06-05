@@ -173,18 +173,28 @@ type CivicEvent = {
 };
 
 type MatchedEvent = CivicEvent & {
+  confidence: "high" | "partial" | "insufficient";
   matchedRegions: string[];
   matchedTerms: string[];
+  relevanceReasons: string[];
+  relevanceScore: number;
   score: number;
 };
 
 type PolicyBrief = {
-  whyNow: string;
+  citations: Array<{ label: string; url: string }>;
+  confidence: "high" | "partial" | "insufficient";
+  decisionPending: string;
+  engagementSteps: string[];
   personalRead: string;
+  relevanceScore: number | null;
+  sourceProof: string;
   suggestedPosition: string;
   tradeoffs: string[];
-  engagementSteps: string[];
-  citations: Array<{ label: string; url: string }>;
+  whatHappened: string;
+  whoCanAct: string;
+  whyNow: string;
+  whySeeing: string[];
 };
 
 type EventSignalSummary = {
@@ -195,6 +205,7 @@ type EventSignalSummary = {
   oppose_count: number;
   unsure_count: number;
   average_urgency: number | null;
+  average_affectedness?: number | null;
   threshold_met: boolean;
 };
 
@@ -206,6 +217,7 @@ type CandidateTopicSummary = {
   oppose_count: number;
   unsure_count: number;
   average_urgency: number | null;
+  average_affectedness?: number | null;
   threshold_met: boolean;
 };
 
@@ -267,9 +279,9 @@ const AGENT_VIEWS: Array<{
   Icon: typeof Bell;
 }> = [
   { id: "alerts", label: "Alerts", Icon: Bell },
-  { id: "agent", label: "Agent", Icon: Bot },
-  { id: "signals", label: "Signals", Icon: Vote },
-  { id: "public", label: "Public", Icon: Users },
+  { id: "agent", label: "Brief", Icon: Bot },
+  { id: "signals", label: "Feedback", Icon: Vote },
+  { id: "public", label: "Public pulse", Icon: Users },
 ];
 
 function envValue(key: string) {
@@ -512,6 +524,7 @@ function matchEvents(
   events: CivicEvent[],
   regions: CivicRegion[],
   topics: CivicTopic[],
+  context: CivicPrivateContext,
 ) {
   return events
     .map((event) => {
@@ -531,18 +544,121 @@ function matchEvents(
         const query = normalizeSearch(topic.query || topic.label);
         return query.length >= 2 && event.searchText.includes(query);
       });
+      const matchedGoals = context.goals.filter((goal) => {
+        const normalized = normalizeSearch(goal);
+        return normalized.length >= 3 && event.searchText.includes(normalized);
+      });
+      const { confidence, relevanceReasons, relevanceScore } = relevanceForEvent(
+        event,
+        matchedRegions.map((region) => region.label),
+        matchedTopics.map((topic) => topic.label || topic.query),
+        matchedGoals,
+      );
 
-      const score = matchedRegions.length * 2 + matchedTopics.length;
+      const score = matchedRegions.length * 2 + matchedTopics.length + matchedGoals.length;
 
       return {
         ...event,
+        confidence,
         matchedRegions: matchedRegions.map((region) => region.label),
         matchedTerms: matchedTopics.map((topic) => topic.label || topic.query),
+        relevanceReasons,
+        relevanceScore,
         score,
       };
     })
     .filter((event) => event.score > 0)
     .sort((a, b) => b.score - a.score || b.eventDate.localeCompare(a.eventDate));
+}
+
+function sourceConfidence(event: CivicEvent) {
+  if (event.sourceUrl && event.summary.length > 40) {
+    return "high" as const;
+  }
+
+  if (event.sourceUrl || event.summary.length > 40) {
+    return "partial" as const;
+  }
+
+  return "insufficient" as const;
+}
+
+function actionabilityReason(event: CivicEvent) {
+  if (/\b(hearing|meeting|comment|agenda|vote|markup|rule|notice)\b/.test(event.searchText)) {
+    return { label: "actionable public decision point", score: 15 };
+  }
+
+  if (event.eventKind === "local" || /\b(bill|resolution|proposed)\b/.test(event.searchText)) {
+    return { label: "possible public decision point", score: 8 };
+  }
+
+  return { label: "", score: 0 };
+}
+
+function recencyReason(event: CivicEvent) {
+  const timestamp = Date.parse(event.eventDate);
+  if (Number.isNaN(timestamp)) {
+    return { label: "", score: 0 };
+  }
+
+  const ageDays = Math.abs(Date.now() - timestamp) / 86400000;
+  if (ageDays <= 14) {
+    return { label: "recent item", score: 5 };
+  }
+
+  return { label: "", score: 0 };
+}
+
+function relevanceForEvent(
+  event: CivicEvent,
+  matchedRegions: string[],
+  matchedTerms: string[],
+  matchedGoals: string[],
+) {
+  const reasons: string[] = [];
+  let relevanceScore = 0;
+
+  if (matchedRegions.length > 0) {
+    relevanceScore += 30;
+    reasons.push(`region match: ${matchedRegions.slice(0, 3).join(", ")}`);
+  }
+
+  if (matchedTerms.length > 0) {
+    relevanceScore += 25;
+    reasons.push(`topic match: ${matchedTerms.slice(0, 3).join(", ")}`);
+  }
+
+  if (matchedGoals.length > 0) {
+    relevanceScore += 15;
+    reasons.push(`goal match: ${matchedGoals.slice(0, 2).join(", ")}`);
+  }
+
+  const actionability = actionabilityReason(event);
+  if (actionability.score > 0) {
+    relevanceScore += actionability.score;
+    reasons.push(actionability.label);
+  }
+
+  const confidence = sourceConfidence(event);
+  if (confidence === "high") {
+    relevanceScore += 10;
+    reasons.push("official source and supporting text available");
+  } else if (confidence === "partial") {
+    relevanceScore += 4;
+    reasons.push("partial source evidence available");
+  }
+
+  const recency = recencyReason(event);
+  if (recency.score > 0) {
+    relevanceScore += recency.score;
+    reasons.push(recency.label);
+  }
+
+  return {
+    confidence: confidence === "high" && reasons.length >= 2 ? "high" : confidence,
+    relevanceReasons: reasons,
+    relevanceScore: Math.max(0, Math.min(100, relevanceScore)),
+  };
 }
 
 function deriveTopicTags(event: CivicEvent, topics: CivicTopic[]) {
@@ -575,11 +691,17 @@ function buildPolicyBrief(
   context: CivicPrivateContext,
   profile: CivicProfile | null,
   topics: CivicTopic[],
+  matchedEvent?: MatchedEvent | null,
 ): PolicyBrief {
   const tags = deriveTopicTags(event, topics);
   const goals = context.goals.slice(0, 4);
   const concerns = context.concerns.slice(0, 4);
   const userRegion = profile?.home_region || event.regionLabel;
+  const confidence = matchedEvent?.confidence ?? sourceConfidence(event);
+  const relevanceReasons =
+    matchedEvent?.relevanceReasons ??
+    relevanceForEvent(event, [], [], []).relevanceReasons;
+  const relevanceScore = matchedEvent?.relevanceScore ?? null;
   const concernText = concerns.length
     ? `Watch for downside risk around ${concerns.join(", ")}.`
     : "Watch for implementation risk, budget impact, and who is left out.";
@@ -587,16 +709,27 @@ function buildPolicyBrief(
     ? `This connects to your stated goals around ${goals.join(", ")}.`
     : `This is relevant to ${userRegion} because it is active civic business from ${event.sourceName}.`;
   const topicText = tags.length ? tags.join(", ") : "general civic operations";
-  const suggestedPosition = goals.length
-    ? "Engage with conditional support: ask for evidence, costs, affected groups, and accountability before backing the final action."
-    : "Track first, then ask for a plain-language impact memo before taking a firm position.";
 
   return {
+    confidence,
+    decisionPending:
+      event.eventKind === "local"
+        ? "This appears tied to a local meeting, agenda, or public body action."
+        : "This appears tied to federal legislative, agency, or public-record activity.",
     whyNow: `${event.sourceName} has a current item dated ${eventDateLabel(
       event.eventDate,
     )}. The strongest detected policy area is ${topicText}.`,
+    whySeeing:
+      relevanceReasons.length > 0
+        ? relevanceReasons
+        : ["current civic feed item", "watchlist match not yet established"],
     personalRead: `${goalText} ${concernText}`,
-    suggestedPosition,
+    relevanceScore,
+    sourceProof: event.sourceUrl
+      ? `Official source available: ${event.sourceUrl}`
+      : "No official source URL is available. Treat this brief as insufficient evidence.",
+    suggestedPosition:
+      "No position is recommended. Use this as a source-grounded checklist for deciding whether to learn more or respond.",
     tradeoffs: [
       "Speed versus scrutiny: faster action can help urgent needs but may miss public input.",
       "Broad benefit versus concentrated cost: the public upside may not be evenly distributed.",
@@ -613,6 +746,11 @@ function buildPolicyBrief(
         url: event.sourceUrl,
       },
     ].filter((citation) => citation.url),
+    whatHappened: `${event.sourceName} surfaced: ${event.title}.`,
+    whoCanAct:
+      event.eventKind === "local"
+        ? "The public body, staff, commenters, and affected residents can act."
+        : "The relevant chamber, agency, committee, commenters, and affected residents can act.",
   };
 }
 
@@ -635,7 +773,7 @@ function buildAdvocacyDraft(
     goalLine,
     concernLine,
     "",
-    `My current position is: ${brief.suggestedPosition}`,
+    `My current civic reading is: ${brief.suggestedPosition}`,
     "",
     "Please add a clear public explanation of expected outcomes, tradeoffs, funding, and accountability measures before final action.",
     sourceLine,
@@ -749,6 +887,7 @@ export default function CivicAgentConsole({
   const [advocacyDraft, setAdvocacyDraft] = useState("");
   const [position, setPosition] = useState<"support" | "oppose" | "unsure">("unsure");
   const [urgency, setUrgency] = useState(3);
+  const [affectedness, setAffectedness] = useState(3);
   const [reason, setReason] = useState("");
   const [desiredOutcome, setDesiredOutcome] = useState("");
   const [eventSummary, setEventSummary] = useState<EventSignalSummary | null>(null);
@@ -764,8 +903,8 @@ export default function CivicAgentConsole({
 
   const civicEvents = useMemo(() => flattenEvents(data), [data]);
   const matchedEvents = useMemo(
-    () => matchEvents(civicEvents, regions, topics),
-    [civicEvents, regions, topics],
+    () => matchEvents(civicEvents, regions, topics, context),
+    [civicEvents, context, regions, topics],
   );
   const activeEvent = useMemo(() => {
     return (
@@ -789,6 +928,10 @@ export default function CivicAgentConsole({
 
   const isConfigured = Boolean(supabase);
   const isSignedIn = Boolean(session?.access_token);
+  const methodologyHref =
+    typeof window !== "undefined" && window.__CIVIC_DATA_URL__
+      ? "./methodology.html"
+      : "/methodology";
 
   useEffect(() => {
     const configTimer = window.setTimeout(() => {
@@ -987,9 +1130,55 @@ export default function CivicAgentConsole({
             token: session.access_token,
           },
         );
+        await Promise.all([
+          supabaseRequest<unknown>(
+            supabase,
+            "/rest/v1/civic_event_relevance_scores?on_conflict=user_id,event_id",
+            {
+              body: matchedEvents.slice(0, 40).map((event) => ({
+                confidence: event.confidence,
+                event_id: event.id,
+                event_kind: event.eventKind,
+                matched_regions: event.matchedRegions,
+                matched_terms: event.matchedTerms,
+                reasons: event.relevanceReasons,
+                score: event.relevanceScore,
+                user_id: session.user.id,
+              })),
+              headers: {
+                Prefer: "resolution=merge-duplicates",
+              },
+              method: "POST",
+              token: session.access_token,
+            },
+          ),
+          supabaseRequest<unknown>(
+            supabase,
+            "/rest/v1/civic_notifications?on_conflict=user_id,event_id,event_kind,notification_kind",
+            {
+              body: matchedEvents.slice(0, 40).map((event) => ({
+                delivery_state: "pending",
+                event_id: event.id,
+                event_kind: event.eventKind,
+                notification_kind: "in_app",
+                relevance_reasons: event.relevanceReasons,
+                relevance_score: event.relevanceScore,
+                source_url: event.sourceUrl,
+                summary: compactText(event.summary, 600),
+                title: event.title,
+                user_id: session.user.id,
+              })),
+              headers: {
+                Prefer: "resolution=merge-duplicates",
+              },
+              method: "POST",
+              token: session.access_token,
+            },
+          ),
+        ]);
 
         if (!silent) {
-          setDataSuccess("Alert matches synced");
+          setDataSuccess("Alert matches and in-app notifications synced");
         }
       } catch (error) {
         if (!silent) {
@@ -1145,7 +1334,7 @@ export default function CivicAgentConsole({
       );
 
       setContext(rows[0] ?? DEFAULT_CONTEXT);
-      setDataSuccess("Agent context saved");
+      setDataSuccess("Civic context saved");
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to save context");
     } finally {
@@ -1285,7 +1474,44 @@ export default function CivicAgentConsole({
       return;
     }
 
-    const nextBrief = buildPolicyBrief(activeEvent, context, profile, topics);
+    let nextBrief = buildPolicyBrief(
+      activeEvent,
+      context,
+      profile,
+      topics,
+      activeMatchedEvent,
+    );
+    if (supabase) {
+      try {
+        const edgeResponse = await fetch(`${supabase.url}/functions/v1/generate-civic-brief`, {
+          body: JSON.stringify({
+            context,
+            event: activeEvent,
+            match: activeMatchedEvent
+              ? {
+                  confidence: activeMatchedEvent.confidence,
+                  reasons: activeMatchedEvent.relevanceReasons,
+                  score: activeMatchedEvent.relevanceScore,
+                }
+              : null,
+            profile,
+          }),
+          headers: {
+            ...authHeaders(supabase, session?.access_token),
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        });
+
+        if (edgeResponse.ok) {
+          const payload = (await edgeResponse.json()) as { brief?: PolicyBrief };
+          nextBrief = payload.brief ?? nextBrief;
+        }
+      } catch {
+        // Static and local builds keep the deterministic fallback when functions are absent.
+      }
+    }
+
     setBrief(nextBrief);
     setAdvocacyDraft("");
 
@@ -1360,30 +1586,56 @@ export default function CivicAgentConsole({
     setDataSuccess("");
 
     try {
-      await supabaseRequest<unknown>(
-        supabase,
-        "/rest/v1/civic_user_event_positions?on_conflict=user_id,event_id,event_kind",
-        {
-          body: {
-            user_id: session.user.id,
-            event_id: activeEvent.id,
-            event_kind: activeEvent.eventKind,
-            region_label: activeEvent.regionLabel,
-            topic_tags: activeTopicTags,
-            position,
-            urgency,
-            reason: reason.trim(),
-            desired_outcome: desiredOutcome.trim(),
-            public_anonymous: true,
+      await Promise.all([
+        supabaseRequest<unknown>(
+          supabase,
+          "/rest/v1/civic_user_feedback?on_conflict=user_id,event_id,event_kind",
+          {
+            body: {
+              affectedness,
+              desired_outcome: desiredOutcome.trim(),
+              event_id: activeEvent.id,
+              event_kind: activeEvent.eventKind,
+              intensity: urgency,
+              position,
+              public_anonymous: true,
+              reason: reason.trim(),
+              region_label: activeEvent.regionLabel,
+              topic_tags: activeTopicTags,
+              user_id: session.user.id,
+            },
+            headers: {
+              Prefer: "resolution=merge-duplicates",
+            },
+            method: "POST",
+            token: session.access_token,
           },
-          headers: {
-            Prefer: "resolution=merge-duplicates",
+        ),
+        supabaseRequest<unknown>(
+          supabase,
+          "/rest/v1/civic_user_event_positions?on_conflict=user_id,event_id,event_kind",
+          {
+            body: {
+              desired_outcome: desiredOutcome.trim(),
+              event_id: activeEvent.id,
+              event_kind: activeEvent.eventKind,
+              position,
+              public_anonymous: true,
+              reason: reason.trim(),
+              region_label: activeEvent.regionLabel,
+              topic_tags: activeTopicTags,
+              urgency,
+              user_id: session.user.id,
+            },
+            headers: {
+              Prefer: "resolution=merge-duplicates",
+            },
+            method: "POST",
+            token: session.access_token,
           },
-          method: "POST",
-          token: session.access_token,
-        },
-      );
-      setDataSuccess("Anonymous signal saved");
+        ),
+      ]);
+      setDataSuccess("Anonymous civic feedback saved");
       await refreshEventSummary();
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to save signal");
@@ -1397,21 +1649,39 @@ export default function CivicAgentConsole({
       return;
     }
 
-    const rows = await supabaseRequest<EventSignalSummary[]>(
-      supabase,
-      "/rest/v1/rpc/civic_event_signal_summary",
-      {
-        body: {
-          p_event_id: activeEvent.id,
-          p_event_kind: activeEvent.eventKind,
-          p_min_count: 5,
+    try {
+      const rows = await supabaseRequest<EventSignalSummary[]>(
+        supabase,
+        "/rest/v1/rpc/civic_event_feedback_summary",
+        {
+          body: {
+            p_event_id: activeEvent.id,
+            p_event_kind: activeEvent.eventKind,
+            p_min_count: 5,
+          },
+          method: "POST",
+          token: session?.access_token,
         },
-        method: "POST",
-        token: session?.access_token,
-      },
-    );
+      );
 
-    setEventSummary(rows[0] ?? null);
+      setEventSummary(rows[0] ?? null);
+    } catch {
+      const rows = await supabaseRequest<EventSignalSummary[]>(
+        supabase,
+        "/rest/v1/rpc/civic_event_signal_summary",
+        {
+          body: {
+            p_event_id: activeEvent.id,
+            p_event_kind: activeEvent.eventKind,
+            p_min_count: 5,
+          },
+          method: "POST",
+          token: session?.access_token,
+        },
+      );
+
+      setEventSummary(rows[0] ?? null);
+    }
   }
 
   async function runCandidateQuery() {
@@ -1424,19 +1694,36 @@ export default function CivicAgentConsole({
     setDataSuccess("");
 
     try {
-      const rows = await supabaseRequest<CandidateTopicSummary[]>(
-        supabase,
-        "/rest/v1/rpc/civic_candidate_topic_summary",
-        {
-          body: {
-            p_region: candidateForm.region_label.trim(),
-            p_topic: candidateForm.topic_query.trim(),
-            p_min_count: candidateForm.min_threshold,
+      let rows: CandidateTopicSummary[];
+      try {
+        rows = await supabaseRequest<CandidateTopicSummary[]>(
+          supabase,
+          "/rest/v1/rpc/civic_public_topic_summary",
+          {
+            body: {
+              p_region: candidateForm.region_label.trim(),
+              p_topic: candidateForm.topic_query.trim(),
+              p_min_count: candidateForm.min_threshold,
+            },
+            method: "POST",
+            token: session?.access_token,
           },
-          method: "POST",
-          token: session?.access_token,
-        },
-      );
+        );
+      } catch {
+        rows = await supabaseRequest<CandidateTopicSummary[]>(
+          supabase,
+          "/rest/v1/rpc/civic_candidate_topic_summary",
+          {
+            body: {
+              p_region: candidateForm.region_label.trim(),
+              p_topic: candidateForm.topic_query.trim(),
+              p_min_count: candidateForm.min_threshold,
+            },
+            method: "POST",
+            token: session?.access_token,
+          },
+        );
+      }
       const summary = rows[0] ?? null;
       setCandidateSummary(summary);
 
@@ -1476,6 +1763,7 @@ export default function CivicAgentConsole({
       setBrief(null);
       setAdvocacyDraft("");
       setEventSummary(null);
+      setAffectedness(3);
       setReason("");
       setDesiredOutcome("");
     }, 0);
@@ -1488,10 +1776,10 @@ export default function CivicAgentConsole({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-teal-700">
-            Civic agent rollout
+            My Civic Radar
           </p>
           <h2 className="mt-1 text-xl font-semibold text-zinc-950">
-            Alerts, policy reasoning, signals, and public aggregates
+            Resident-first alerts, civic briefs, and public signals
           </h2>
         </div>
 
@@ -1500,6 +1788,14 @@ export default function CivicAgentConsole({
           <Pill>{regions.length} regions</Pill>
           <Pill>{topics.length} topics</Pill>
           <Pill>{isSignedIn ? "Account active" : "Public mode"}</Pill>
+          <a
+            className="inline-flex items-center rounded-full bg-white px-2 py-1 text-[11px] font-medium text-teal-700 ring-1 ring-teal-200 hover:bg-teal-50"
+            href={methodologyHref}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Methodology
+          </a>
         </div>
       </div>
 
@@ -1775,7 +2071,7 @@ export default function CivicAgentConsole({
             <div className="rounded-lg border border-zinc-200 p-3">
               <div className="flex items-center gap-2">
                 <Lock className="h-4 w-4 text-teal-700" />
-                <FieldLabel>Private agent context</FieldLabel>
+                <FieldLabel>Private civic context</FieldLabel>
               </div>
               <div className="mt-2 grid gap-2">
                 <textarea
@@ -1805,7 +2101,7 @@ export default function CivicAgentConsole({
                       life_context: event.target.value,
                     }))
                   }
-                  placeholder="Life context the agent should consider privately"
+                  placeholder="Life context Civic Radar should consider privately"
                   value={contextForm.life_context}
                 />
                 <textarea
@@ -1831,7 +2127,7 @@ export default function CivicAgentConsole({
                     }
                     type="checkbox"
                   />
-                  Let my agent use this private context to generate briefs and drafts.
+                  Let Civic Radar use this private context to generate briefs and drafts.
                 </label>
                 <label className="inline-flex items-start gap-2 text-sm text-zinc-700">
                   <input
@@ -1845,7 +2141,7 @@ export default function CivicAgentConsole({
                     }
                     type="checkbox"
                   />
-                  Include my anonymous signals in thresholded public aggregates.
+                  Include my anonymous feedback in thresholded public aggregates.
                 </label>
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
@@ -1895,7 +2191,7 @@ export default function CivicAgentConsole({
                     type="button"
                   >
                     <Bell className="h-4 w-4" />
-                    Sync alerts
+                    Save in-app alerts
                   </button>
                 </div>
 
@@ -1935,6 +2231,12 @@ export default function CivicAgentConsole({
                         </div>
                         {"matchedTerms" in event || "matchedRegions" in event ? (
                           <div className="mt-2 flex flex-wrap gap-1.5">
+                            {"relevanceScore" in event ? (
+                              <Pill>{(event as MatchedEvent).relevanceScore}/100 relevance</Pill>
+                            ) : null}
+                            {"confidence" in event ? (
+                              <Pill>{(event as MatchedEvent).confidence} confidence</Pill>
+                            ) : null}
                             {(event as MatchedEvent).matchedRegions?.map((label) => (
                               <Pill key={label}>{label}</Pill>
                             ))}
@@ -1942,6 +2244,12 @@ export default function CivicAgentConsole({
                               <Pill key={label}>{label}</Pill>
                             ))}
                           </div>
+                        ) : null}
+                        {"relevanceReasons" in event &&
+                        (event as MatchedEvent).relevanceReasons.length > 0 ? (
+                          <p className="mt-2 text-xs leading-5 text-zinc-500">
+                            Why: {(event as MatchedEvent).relevanceReasons.join("; ")}
+                          </p>
                         ) : null}
                       </button>
                     ),
@@ -1955,7 +2263,7 @@ export default function CivicAgentConsole({
                 <div className="rounded-lg border border-zinc-200 p-3">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
-                      <FieldLabel>Policy agent</FieldLabel>
+                      <FieldLabel>Evidence-bound civic brief</FieldLabel>
                       <h3 className="mt-1 text-lg font-semibold text-zinc-950">
                         {activeEvent?.title ?? "No active event"}
                       </h3>
@@ -1989,23 +2297,45 @@ export default function CivicAgentConsole({
 
                   {brief ? (
                     <div className="mt-3 grid gap-3">
-                      <div className="rounded-lg bg-zinc-50 p-3">
-                        <p className="text-sm font-semibold text-zinc-950">Why now</p>
-                        <p className="mt-1 text-sm leading-6 text-zinc-700">{brief.whyNow}</p>
+                      <div className="flex flex-wrap gap-2">
+                        <Pill>{brief.confidence} confidence</Pill>
+                        {brief.relevanceScore !== null ? (
+                          <Pill>{brief.relevanceScore}/100 relevance</Pill>
+                        ) : null}
                       </div>
                       <div className="rounded-lg bg-zinc-50 p-3">
-                        <p className="text-sm font-semibold text-zinc-950">Personal read</p>
+                        <p className="text-sm font-semibold text-zinc-950">What happened</p>
                         <p className="mt-1 text-sm leading-6 text-zinc-700">
-                          {brief.personalRead}
-                        </p>
-                      </div>
-                      <div className="rounded-lg bg-zinc-50 p-3">
-                        <p className="text-sm font-semibold text-zinc-950">Suggested stance</p>
-                        <p className="mt-1 text-sm leading-6 text-zinc-700">
-                          {brief.suggestedPosition}
+                          {brief.whatHappened}
                         </p>
                       </div>
                       <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-lg bg-zinc-50 p-3">
+                          <p className="text-sm font-semibold text-zinc-950">Why this matched</p>
+                          <ul className="mt-2 grid gap-2 text-sm leading-6 text-zinc-700">
+                            {brief.whySeeing.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                        <div className="rounded-lg bg-zinc-50 p-3">
+                          <p className="text-sm font-semibold text-zinc-950">Personal read</p>
+                          <p className="mt-1 text-sm leading-6 text-zinc-700">
+                            {brief.personalRead}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-zinc-50 p-3">
+                          <p className="text-sm font-semibold text-zinc-950">Decision pending</p>
+                          <p className="mt-1 text-sm leading-6 text-zinc-700">
+                            {brief.decisionPending}
+                          </p>
+                        </div>
+                        <div className="rounded-lg bg-zinc-50 p-3">
+                          <p className="text-sm font-semibold text-zinc-950">Who can act</p>
+                          <p className="mt-1 text-sm leading-6 text-zinc-700">
+                            {brief.whoCanAct}
+                          </p>
+                        </div>
                         <div className="rounded-lg bg-zinc-50 p-3">
                           <p className="text-sm font-semibold text-zinc-950">Tradeoffs</p>
                           <ul className="mt-2 grid gap-2 text-sm leading-6 text-zinc-700">
@@ -2022,6 +2352,15 @@ export default function CivicAgentConsole({
                             ))}
                           </ul>
                         </div>
+                      </div>
+                      <div className="rounded-lg bg-zinc-50 p-3">
+                        <p className="text-sm font-semibold text-zinc-950">Source proof</p>
+                        <p className="mt-1 text-sm leading-6 text-zinc-700">
+                          {brief.sourceProof}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-zinc-700">
+                          {brief.suggestedPosition}
+                        </p>
                       </div>
                       {brief.citations.length > 0 ? (
                         <div className="flex flex-wrap gap-2">
@@ -2110,11 +2449,11 @@ export default function CivicAgentConsole({
             {agentView === "signals" ? (
               <div className="mt-3 grid gap-3">
                 <div className="rounded-lg border border-zinc-200 p-3">
-                  <FieldLabel>Anonymous preference signal</FieldLabel>
+                  <FieldLabel>Anonymous civic feedback</FieldLabel>
                   <h3 className="mt-1 text-lg font-semibold text-zinc-950">
                     {activeEvent?.title ?? "No active event"}
                   </h3>
-                  <div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr]">
+                  <div className="mt-3 grid gap-2 md:grid-cols-[160px_1fr_1fr]">
                     <select
                       className="rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-teal-500"
                       onChange={(event) =>
@@ -2139,6 +2478,19 @@ export default function CivicAgentConsole({
                         value={urgency}
                       />
                     </div>
+                    <div className="grid gap-1">
+                      <div className="flex items-center justify-between text-xs text-zinc-500">
+                        <span>Affectedness</span>
+                        <span>{affectedness}/5</span>
+                      </div>
+                      <input
+                        max={5}
+                        min={1}
+                        onChange={(event) => setAffectedness(Number(event.target.value))}
+                        type="range"
+                        value={affectedness}
+                      />
+                    </div>
                   </div>
                   <textarea
                     className="mt-2 min-h-20 w-full rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
@@ -2160,7 +2512,7 @@ export default function CivicAgentConsole({
                       type="button"
                     >
                       <Vote className="h-4 w-4" />
-                      Save signal
+                      Save feedback
                     </button>
                     <button
                       className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700 disabled:opacity-50"
@@ -2176,14 +2528,15 @@ export default function CivicAgentConsole({
                 </div>
 
                 <div className="rounded-lg border border-zinc-200 p-3">
-                  <FieldLabel>Privacy-threshold aggregate</FieldLabel>
+                  <FieldLabel>Privacy-threshold public pulse</FieldLabel>
                   {eventSummary ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-5">
+                    <div className="mt-3 grid gap-2 sm:grid-cols-6">
                       <Pill>{eventSummary.threshold_met ? `${eventSummary.total_count} total` : "Threshold not met"}</Pill>
                       <Pill>{eventSummary.support_count} support</Pill>
                       <Pill>{eventSummary.oppose_count} oppose</Pill>
                       <Pill>{eventSummary.unsure_count} unsure</Pill>
                       <Pill>{eventSummary.average_urgency ?? "-"} avg urgency</Pill>
+                      <Pill>{eventSummary.average_affectedness ?? "-"} avg affected</Pill>
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-zinc-500">
@@ -2198,7 +2551,7 @@ export default function CivicAgentConsole({
               <div className="mt-3 rounded-lg border border-zinc-200 p-3">
                 <div className="flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-teal-700" />
-                  <FieldLabel>Candidate and public-official query</FieldLabel>
+                  <FieldLabel>Public pulse query</FieldLabel>
                 </div>
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   <select
@@ -2260,7 +2613,7 @@ export default function CivicAgentConsole({
                       question: event.target.value,
                     }))
                   }
-                  placeholder="Question for anonymous aggregate"
+                  placeholder="Question for thresholded anonymous aggregate"
                   value={candidateForm.question}
                 />
                 <button
@@ -2270,7 +2623,7 @@ export default function CivicAgentConsole({
                   type="button"
                 >
                   <Users className="h-4 w-4" />
-                  Run aggregate
+                  Run public pulse
                 </button>
 
                 {candidateSummary ? (
@@ -2286,6 +2639,7 @@ export default function CivicAgentConsole({
                       <Pill>{candidateSummary.oppose_count} oppose</Pill>
                       <Pill>{candidateSummary.unsure_count} unsure</Pill>
                       <Pill>{candidateSummary.average_urgency ?? "-"} avg urgency</Pill>
+                      <Pill>{candidateSummary.average_affectedness ?? "-"} avg affected</Pill>
                     </div>
                   </div>
                 ) : null}

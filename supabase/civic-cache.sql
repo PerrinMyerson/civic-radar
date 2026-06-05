@@ -495,3 +495,353 @@ $$;
 
 grant execute on function public.civic_candidate_topic_summary(text, text, integer)
   to anon, authenticated, service_role;
+
+create table if not exists public.civic_events (
+  id text primary key,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  title text not null,
+  summary text not null default '',
+  source_name text not null default '',
+  source_url text not null default '',
+  event_date text not null default '',
+  region_label text not null default '',
+  source_id text not null default '',
+  actionability text not null default 'unknown'
+    check (actionability in ('high', 'medium', 'low', 'unknown')),
+  source_confidence text not null default 'partial'
+    check (source_confidence in ('high', 'partial', 'insufficient')),
+  search_text text not null default '',
+  raw_payload jsonb not null default '{}'::jsonb,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+
+create index if not exists civic_events_last_seen_at_idx
+  on public.civic_events (last_seen_at desc);
+
+create index if not exists civic_events_region_idx
+  on public.civic_events (region_label);
+
+create index if not exists civic_events_search_idx
+  on public.civic_events using gin (to_tsvector('english', search_text));
+
+create table if not exists public.civic_event_sources (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null references public.civic_events (id) on delete cascade,
+  source_label text not null,
+  source_url text not null,
+  source_type text not null default 'official'
+    check (source_type in ('official', 'rss', 'api', 'derived')),
+  created_at timestamptz not null default now(),
+  unique (event_id, source_url)
+);
+
+create index if not exists civic_event_sources_event_id_idx
+  on public.civic_event_sources (event_id);
+
+create table if not exists public.civic_event_relevance_scores (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  event_id text not null references public.civic_events (id) on delete cascade,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  score integer not null default 0 check (score between 0 and 100),
+  confidence text not null default 'partial'
+    check (confidence in ('high', 'partial', 'insufficient')),
+  reasons text[] not null default '{}',
+  matched_regions text[] not null default '{}',
+  matched_terms text[] not null default '{}',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, event_id)
+);
+
+create index if not exists civic_event_relevance_scores_user_idx
+  on public.civic_event_relevance_scores (user_id, score desc);
+
+drop trigger if exists civic_event_relevance_scores_set_updated_at on public.civic_event_relevance_scores;
+create trigger civic_event_relevance_scores_set_updated_at
+  before update on public.civic_event_relevance_scores
+  for each row
+  execute function public.set_civic_updated_at();
+
+create table if not exists public.civic_notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  event_id text not null,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  notification_kind text not null default 'in_app'
+    check (notification_kind in ('in_app', 'email')),
+  title text not null,
+  summary text not null default '',
+  source_url text not null default '',
+  relevance_score integer not null default 0 check (relevance_score between 0 and 100),
+  relevance_reasons text[] not null default '{}',
+  delivery_state text not null default 'pending'
+    check (delivery_state in ('pending', 'queued_no_provider', 'sent', 'failed', 'opened', 'dismissed', 'saved')),
+  sent_at timestamptz,
+  opened_at timestamptz,
+  created_at timestamptz not null default now(),
+  unique (user_id, event_id, event_kind, notification_kind)
+);
+
+create index if not exists civic_notifications_user_idx
+  on public.civic_notifications (user_id, created_at desc);
+
+create table if not exists public.civic_user_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  event_id text not null,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  region_label text not null default '',
+  topic_tags text[] not null default '{}',
+  position text not null check (position in ('support', 'oppose', 'unsure')),
+  intensity integer not null default 3 check (intensity between 1 and 5),
+  affectedness integer not null default 3 check (affectedness between 1 and 5),
+  reason text not null default '',
+  desired_outcome text not null default '',
+  public_anonymous boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, event_id, event_kind)
+);
+
+create index if not exists civic_user_feedback_event_idx
+  on public.civic_user_feedback (event_id, event_kind);
+
+create index if not exists civic_user_feedback_topic_idx
+  on public.civic_user_feedback using gin (topic_tags);
+
+drop trigger if exists civic_user_feedback_set_updated_at on public.civic_user_feedback;
+create trigger civic_user_feedback_set_updated_at
+  before update on public.civic_user_feedback
+  for each row
+  execute function public.set_civic_updated_at();
+
+create table if not exists public.civic_event_outcomes (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  outcome_status text not null default 'unknown'
+    check (outcome_status in ('unknown', 'pending', 'passed', 'failed', 'continued', 'withdrawn')),
+  outcome_summary text not null default '',
+  outcome_url text not null default '',
+  observed_at timestamptz not null default now(),
+  unique (event_id, event_kind)
+);
+
+create table if not exists public.civic_explanation_audits (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users (id) on delete set null,
+  event_id text not null,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  confidence text not null check (confidence in ('high', 'partial', 'insufficient')),
+  source_urls text[] not null default '{}',
+  relevance_reasons text[] not null default '{}',
+  model_name text not null default 'deterministic-v1',
+  explanation jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists civic_explanation_audits_user_idx
+  on public.civic_explanation_audits (user_id, created_at desc);
+
+alter table public.civic_events enable row level security;
+alter table public.civic_event_sources enable row level security;
+alter table public.civic_event_relevance_scores enable row level security;
+alter table public.civic_notifications enable row level security;
+alter table public.civic_user_feedback enable row level security;
+alter table public.civic_event_outcomes enable row level security;
+alter table public.civic_explanation_audits enable row level security;
+
+drop policy if exists "Anyone can read civic events" on public.civic_events;
+create policy "Anyone can read civic events"
+  on public.civic_events
+  for select
+  using (true);
+
+drop policy if exists "Anyone can read civic event sources" on public.civic_event_sources;
+create policy "Anyone can read civic event sources"
+  on public.civic_event_sources
+  for select
+  using (true);
+
+drop policy if exists "Anyone can read civic event outcomes" on public.civic_event_outcomes;
+create policy "Anyone can read civic event outcomes"
+  on public.civic_event_outcomes
+  for select
+  using (true);
+
+drop policy if exists "Users manage own civic relevance scores" on public.civic_event_relevance_scores;
+create policy "Users manage own civic relevance scores"
+  on public.civic_event_relevance_scores
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users manage own civic notifications" on public.civic_notifications;
+create policy "Users manage own civic notifications"
+  on public.civic_notifications
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users manage own civic feedback" on public.civic_user_feedback;
+create policy "Users manage own civic feedback"
+  on public.civic_user_feedback
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users read own civic explanation audits" on public.civic_explanation_audits;
+create policy "Users read own civic explanation audits"
+  on public.civic_explanation_audits
+  for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "Users insert own civic explanation audits" on public.civic_explanation_audits;
+create policy "Users insert own civic explanation audits"
+  on public.civic_explanation_audits
+  for insert
+  with check (auth.uid() = user_id or user_id is null);
+
+create or replace function public.civic_event_feedback_summary(
+  p_event_id text,
+  p_event_kind text default null,
+  p_min_count integer default 5
+)
+returns table (
+  event_id text,
+  event_kind text,
+  total_count integer,
+  support_count integer,
+  oppose_count integer,
+  unsure_count integer,
+  average_urgency numeric,
+  average_affectedness numeric,
+  threshold_met boolean
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with scoped as (
+    select *
+    from public.civic_user_feedback
+    where event_id = p_event_id
+      and (p_event_kind is null or event_kind = p_event_kind)
+      and public_anonymous = true
+  ),
+  counted as (
+    select
+      p_event_id as event_id,
+      coalesce(min(event_kind), p_event_kind, 'federal') as event_kind,
+      count(*)::integer as total_count,
+      count(*) filter (where position = 'support')::integer as support_count,
+      count(*) filter (where position = 'oppose')::integer as oppose_count,
+      count(*) filter (where position = 'unsure')::integer as unsure_count,
+      round(avg(intensity)::numeric, 2) as average_urgency,
+      round(avg(affectedness)::numeric, 2) as average_affectedness
+    from scoped
+  )
+  select
+    counted.event_id,
+    counted.event_kind,
+    case when counted.total_count >= p_min_count then counted.total_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.support_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.oppose_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.unsure_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.average_urgency else null end,
+    case when counted.total_count >= p_min_count then counted.average_affectedness else null end,
+    counted.total_count >= p_min_count
+  from counted;
+$$;
+
+grant execute on function public.civic_event_feedback_summary(text, text, integer)
+  to anon, authenticated, service_role;
+
+create or replace function public.civic_public_topic_summary(
+  p_region text default '',
+  p_topic text default '',
+  p_min_count integer default 5
+)
+returns table (
+  region_label text,
+  topic_query text,
+  total_count integer,
+  support_count integer,
+  oppose_count integer,
+  unsure_count integer,
+  average_urgency numeric,
+  average_affectedness numeric,
+  threshold_met boolean
+)
+language sql
+security definer
+set search_path = public
+as $$
+  with scoped as (
+    select *
+    from public.civic_user_feedback
+    where public_anonymous = true
+      and (
+        nullif(trim(p_region), '') is null
+        or region_label ilike '%' || trim(p_region) || '%'
+      )
+      and (
+        nullif(trim(p_topic), '') is null
+        or exists (
+          select 1
+          from unnest(topic_tags) as tag
+          where tag ilike '%' || trim(p_topic) || '%'
+        )
+        or reason ilike '%' || trim(p_topic) || '%'
+        or desired_outcome ilike '%' || trim(p_topic) || '%'
+      )
+  ),
+  counted as (
+    select
+      coalesce(nullif(trim(p_region), ''), 'All regions') as region_label,
+      coalesce(nullif(trim(p_topic), ''), 'All topics') as topic_query,
+      count(*)::integer as total_count,
+      count(*) filter (where position = 'support')::integer as support_count,
+      count(*) filter (where position = 'oppose')::integer as oppose_count,
+      count(*) filter (where position = 'unsure')::integer as unsure_count,
+      round(avg(intensity)::numeric, 2) as average_urgency,
+      round(avg(affectedness)::numeric, 2) as average_affectedness
+    from scoped
+  )
+  select
+    counted.region_label,
+    counted.topic_query,
+    case when counted.total_count >= p_min_count then counted.total_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.support_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.oppose_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.unsure_count else 0 end,
+    case when counted.total_count >= p_min_count then counted.average_urgency else null end,
+    case when counted.total_count >= p_min_count then counted.average_affectedness else null end,
+    counted.total_count >= p_min_count
+  from counted;
+$$;
+
+grant execute on function public.civic_public_topic_summary(text, text, integer)
+  to anon, authenticated, service_role;
+
+create or replace function public.record_civic_notification_interaction(
+  p_notification_id uuid,
+  p_state text
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  update public.civic_notifications
+  set delivery_state = p_state,
+      opened_at = case when p_state = 'opened' then now() else opened_at end
+  where id = p_notification_id
+    and user_id = auth.uid()
+    and p_state in ('opened', 'dismissed', 'saved');
+$$;
+
+grant execute on function public.record_civic_notification_interaction(uuid, text)
+  to authenticated, service_role;

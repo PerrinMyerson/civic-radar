@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Civic Radar methodology, limitations, and research basis."
+    />
+    <title>Civic Radar Methodology</title>
+    <style>
+      body {
+        margin: 0;
+        background: #f5f7f4;
+        color: #181f1b;
+        font-family: Arial, Helvetica, sans-serif;
+      }
+
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 32px 18px 48px;
+      }
+
+      h1 {
+        margin: 8px 0 0;
+        font-size: clamp(2rem, 5vw, 3rem);
+        line-height: 1.05;
+      }
+
+      h2 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      p,
+      li {
+        color: #3f463f;
+        line-height: 1.7;
+      }
+
+      a {
+        color: #0f766e;
+        font-weight: 700;
+      }
+
+      .eyebrow {
+        color: #0f766e;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        margin-top: 28px;
+      }
+
+      .panel {
+        background: #ffffff;
+        border: 1px solid #d9ded8;
+        border-radius: 8px;
+        box-shadow: 0 1px 4px rgb(24 31 27 / 8%);
+        padding: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Civic Radar methodology</p>
+      <h1>Resident-first civic aid, not automated political bargaining</h1>
+
+      <p>
+        Civic Radar is designed to reduce civic transaction costs: finding public
+        actions, understanding why they may matter, and deciding whether to learn
+        more or respond. It is not currently a true Coasean bargaining system.
+      </p>
+      <p>
+        A true Coasean system would need identifiable affected parties,
+        bargaining rights, tradeoff packages, commitments, enforcement, and a
+        legitimacy model. Civic Radar is closer to public-utility infrastructure:
+        alerts, evidence-bound briefs, preference-intensity feedback, and
+        privacy-thresholded public signals.
+      </p>
+
+      <section class="grid">
+        <div class="panel">
+          <h2>Relevance</h2>
+          <p>
+            Items are ranked by region match, topic match, actionability,
+            recency, source confidence, and user-stated priorities.
+          </p>
+        </div>
+        <div class="panel">
+          <h2>Evidence</h2>
+          <p>
+            Briefs must point back to official source links. Missing source
+            evidence lowers confidence instead of producing a stronger claim.
+          </p>
+        </div>
+        <div class="panel">
+          <h2>Feedback</h2>
+          <p>
+            Resident feedback separates position, intensity, affectedness,
+            reason, and desired outcome.
+          </p>
+        </div>
+        <div class="panel">
+          <h2>Privacy</h2>
+          <p>
+            Public aggregates are thresholded and never expose private life
+            context, email, or individual reasons.
+          </p>
+        </div>
+      </section>
+
+      <section class="panel" style="margin-top: 28px">
+        <h2>Research basis</h2>
+        <ul>
+          <li>
+            <a href="https://onlinelibrary.wiley.com/doi/10.1002/sres.3850090105">
+              Ronald Coase, The Problem of Social Cost
+            </a>
+          </li>
+          <li>
+            <a href="https://blog.cosmos-institute.org/p/coasean-bargaining-at-scale">
+              Cosmos Institute, Coasean Bargaining at Scale
+            </a>
+          </li>
+          <li>
+            <a href="https://sites.tufts.edu/civicstudies/2022/01/26/design-principles-for-commons/">
+              Ostrom commons-governance design principles
+            </a>
+          </li>
+          <li><a href="https://geo.pol.is/">Pol.is</a></li>
+          <li>
+            <a href="https://kclpure.kcl.ac.uk/portal/en/publications/sorting-a-public-using-quali-quantitative-methods-to-interrogate-">
+              vTaiwan and quali-quantitative public sorting
+            </a>
+          </li>
+          <li>
+            <a href="https://www.aeaweb.org/articles?id=10.1257%2Fpandp.20181002">
+              Quadratic voting and preference intensity
+            </a>
+          </li>
+          <li>
+            <a href="https://deepmind.google/research/publications/65220/">
+              Habermas Machine: AI and common ground in deliberation
+            </a>
+          </li>
+        </ul>
+      </section>
+
+      <section class="panel" style="margin-top: 28px">
+        <h2>Current limitations</h2>
+        <ul>
+          <li>Civic Radar does not negotiate policy bargains for users.</li>
+          <li>It does not submit comments, emails, calls, or testimony without explicit user action.</li>
+          <li>It does not prove democratic representativeness from a small sample.</li>
+          <li>It should not be used as the only source for legal, financial, or voting decisions.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

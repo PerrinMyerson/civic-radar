@@ -73,7 +73,7 @@ also set `window.__SUPABASE_URL__` and `window.__SUPABASE_ANON_KEY__` in
 
 ## Civic Agent Rollout
 
-The dashboard includes a Supabase-backed Civic Agent workspace:
+The dashboard includes a Supabase-backed resident civic-aid workspace:
 
 - Accounts through Supabase Auth.
 - Region, jurisdiction, topic, bill keyword, agency, committee, and local-body
@@ -81,14 +81,52 @@ The dashboard includes a Supabase-backed Civic Agent workspace:
 - Current alert matching against loaded federal and local civic events.
 - Private user goals, concerns, life context, notification preferences, and
   consent flags protected by row-level security.
-- Deterministic policy briefs with citations back to official sources.
+- Evidence-bound civic briefs with confidence states and citations back to
+  official sources.
 - Consent-gated comment, email, testimony, and call-script drafts.
-- Anonymous support/oppose/unsure signals with priority intensity.
+- Anonymous support/oppose/unsure feedback with priority intensity and
+  affectedness.
 - Thresholded aggregate RPCs for event-level and candidate/public topic queries.
+- A public methodology page that states Civic Radar is not yet a Coasean
+  bargaining system.
 
 Candidate-facing aggregate queries return counts only after the configured
 minimum threshold is met. Private life context is never exposed through these
 aggregate functions.
+
+### Normalized Events and Edge Functions
+
+The SQL file also defines normalized civic-aid tables:
+
+- `civic_events` and `civic_event_sources` store normalized public items.
+- `civic_event_relevance_scores` records why an item matched a resident.
+- `civic_notifications` stores in-app and email notification state.
+- `civic_user_feedback` captures position, intensity, affectedness, reason, and
+  desired outcome.
+- `civic_event_outcomes` and `civic_explanation_audits` support outcome tracking
+  and source-grounded explanation review.
+
+Supabase Edge Function source lives under `supabase/functions/`:
+
+- `sync-civic-events`: ingest the public snapshot into normalized event rows.
+- `match-civic-alerts`: match events to user watchlists server-side.
+- `send-civic-digest`: send email via Resend when `RESEND_API_KEY` is set, or
+  leave in-app notifications queued when it is not.
+- `generate-civic-brief`: return a deterministic source-bounded brief and write
+  an audit row.
+
+The GitHub Pages workflow invokes `sync-civic-events`, `match-civic-alerts`, and
+`send-civic-digest` after each push/scheduled deploy, so the six-hour Pages
+schedule also refreshes normalized events and in-app/email notification state.
+
+Set these function secrets before enabling scheduled production runs:
+
+```bash
+npx supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
+npx supabase secrets set CIVIC_RADAR_FEED_URL=https://perrinmyerson.github.io/civic-radar/civic-data.json
+npx supabase secrets set RESEND_API_KEY=your_resend_key
+npx supabase secrets set CIVIC_RADAR_FROM_EMAIL="Civic Radar <alerts@your-domain.example>"
+```
 
 ## Included Shape
 
