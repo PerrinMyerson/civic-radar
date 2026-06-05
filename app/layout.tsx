@@ -14,11 +14,17 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Civic Radar",
-  description: "A live map and docket monitor for federal and local government activity.",
+  description:
+    "A live civic feed dashboard with account watchlists, policy briefs, and anonymous civic signals.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
   },
+};
+
+const supabasePublicConfig = {
+  anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+  url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
 };
 
 export default function RootLayout({
@@ -31,6 +37,17 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        {supabasePublicConfig.url && supabasePublicConfig.anonKey ? (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `window.__SUPABASE_URL__=${JSON.stringify(
+                supabasePublicConfig.url,
+              )};window.__SUPABASE_ANON_KEY__=${JSON.stringify(
+                supabasePublicConfig.anonKey,
+              )};`,
+            }}
+          />
+        ) : null}
         {children}
       </body>
     </html>

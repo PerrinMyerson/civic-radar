@@ -18,6 +18,7 @@ import {
   Video,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import CivicAgentConsole from "./CivicAgentConsole";
 
 type FeedItem = {
   id: string;
@@ -1191,6 +1192,8 @@ export default function CivicDashboard() {
             </aside>
           ) : null}
         </section>
+
+        <CivicAgentConsole data={data} selectedSource={selectedSource} />
 
         <footer className="mt-6 flex flex-col gap-2 border-t border-zinc-200 py-5 text-xs text-zinc-500 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-x-4 gap-y-1">

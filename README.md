@@ -55,6 +55,41 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 Set `SUPABASE_CACHE_ENABLED=false` to disable Supabase while keeping the
 in-memory fallback.
 
+The same SQL file also creates the Civic Agent rollout tables for accounts,
+watchlists, private context, alert matches, policy briefs, advocacy drafts,
+anonymous preference signals, and thresholded public/candidate aggregates. Re-run
+the file in the Supabase SQL editor whenever the schema changes.
+
+For browser account features, expose only the public Supabase values:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_public_anon_key
+```
+
+The service-role key must stay server-side. The public GitHub Pages build can
+also set `window.__SUPABASE_URL__` and `window.__SUPABASE_ANON_KEY__` in
+`github-pages/index.html`.
+
+## Civic Agent Rollout
+
+The dashboard includes a Supabase-backed Civic Agent workspace:
+
+- Accounts through Supabase Auth.
+- Region, jurisdiction, topic, bill keyword, agency, committee, and local-body
+  watchlists.
+- Current alert matching against loaded federal and local civic events.
+- Private user goals, concerns, life context, notification preferences, and
+  consent flags protected by row-level security.
+- Deterministic policy briefs with citations back to official sources.
+- Consent-gated comment, email, testimony, and call-script drafts.
+- Anonymous support/oppose/unsure signals with priority intensity.
+- Thresholded aggregate RPCs for event-level and candidate/public topic queries.
+
+Candidate-facing aggregate queries return counts only after the configured
+minimum threshold is met. Private life context is never exposed through these
+aggregate functions.
+
 ## Included Shape
 
 - edit site code under `app/`
