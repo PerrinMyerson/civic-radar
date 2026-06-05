@@ -7,6 +7,7 @@ const rootDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   base: "/civic-radar/",
+  publicDir: resolve(rootDir, "public"),
   root: "github-pages",
   build: {
     emptyOutDir: true,
