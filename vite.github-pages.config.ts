@@ -16,6 +16,7 @@ export default defineConfig({
       input: {
         index: resolve(rootDir, "github-pages/index.html"),
         methodology: resolve(rootDir, "github-pages/methodology.html"),
+        myCivicRadar: resolve(rootDir, "github-pages/my-civic-radar.html"),
       },
     },
   },
