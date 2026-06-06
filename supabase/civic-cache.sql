@@ -127,6 +127,10 @@ create table if not exists public.civic_profiles (
   updated_at timestamptz not null default now()
 );
 
+alter table public.civic_profiles
+  add column if not exists onboarding_completed_at timestamptz,
+  add column if not exists onboarding_version text not null default 'resident-burden-v1';
+
 drop trigger if exists civic_profiles_set_updated_at on public.civic_profiles;
 create trigger civic_profiles_set_updated_at
   before update on public.civic_profiles
@@ -564,6 +568,26 @@ create trigger civic_event_relevance_scores_set_updated_at
   for each row
   execute function public.set_civic_updated_at();
 
+create table if not exists public.civic_event_burden_scores (
+  id uuid primary key default gen_random_uuid(),
+  event_id text not null references public.civic_events (id) on delete cascade,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  score integer not null default 0 check (score between 0 and 100),
+  label text not null default 'Moderate burden'
+    check (label in ('Low burden', 'Moderate burden', 'High burden')),
+  source_friction integer not null default 0 check (source_friction between 0 and 20),
+  decision_ambiguity integer not null default 0 check (decision_ambiguity between 0 and 20),
+  actor_ambiguity integer not null default 0 check (actor_ambiguity between 0 and 20),
+  time_ambiguity integer not null default 0 check (time_ambiguity between 0 and 20),
+  action_ambiguity integer not null default 0 check (action_ambiguity between 0 and 20),
+  reasons text[] not null default '{}',
+  computed_at timestamptz not null default now(),
+  unique (event_id, event_kind)
+);
+
+create index if not exists civic_event_burden_scores_score_idx
+  on public.civic_event_burden_scores (score desc);
+
 create table if not exists public.civic_notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
@@ -617,6 +641,40 @@ create trigger civic_user_feedback_set_updated_at
   for each row
   execute function public.set_civic_updated_at();
 
+create table if not exists public.civic_relevance_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  event_id text not null,
+  event_kind text not null check (event_kind in ('federal', 'local')),
+  feedback_type text not null
+    check (
+      feedback_type in (
+        'relevant',
+        'not_relevant',
+        'wrong_region',
+        'wrong_topic',
+        'too_late',
+        'important_unclear'
+      )
+    ),
+  comment text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, event_id, event_kind, feedback_type)
+);
+
+create index if not exists civic_relevance_feedback_event_idx
+  on public.civic_relevance_feedback (event_id, event_kind);
+
+create index if not exists civic_relevance_feedback_user_idx
+  on public.civic_relevance_feedback (user_id, updated_at desc);
+
+drop trigger if exists civic_relevance_feedback_set_updated_at on public.civic_relevance_feedback;
+create trigger civic_relevance_feedback_set_updated_at
+  before update on public.civic_relevance_feedback
+  for each row
+  execute function public.set_civic_updated_at();
+
 create table if not exists public.civic_event_outcomes (
   id uuid primary key default gen_random_uuid(),
   event_id text not null,
@@ -648,8 +706,10 @@ create index if not exists civic_explanation_audits_user_idx
 alter table public.civic_events enable row level security;
 alter table public.civic_event_sources enable row level security;
 alter table public.civic_event_relevance_scores enable row level security;
+alter table public.civic_event_burden_scores enable row level security;
 alter table public.civic_notifications enable row level security;
 alter table public.civic_user_feedback enable row level security;
+alter table public.civic_relevance_feedback enable row level security;
 alter table public.civic_event_outcomes enable row level security;
 alter table public.civic_explanation_audits enable row level security;
 
@@ -678,6 +738,12 @@ create policy "Users manage own civic relevance scores"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+drop policy if exists "Anyone can read civic event burden scores" on public.civic_event_burden_scores;
+create policy "Anyone can read civic event burden scores"
+  on public.civic_event_burden_scores
+  for select
+  using (true);
+
 drop policy if exists "Users manage own civic notifications" on public.civic_notifications;
 create policy "Users manage own civic notifications"
   on public.civic_notifications
@@ -688,6 +754,13 @@ create policy "Users manage own civic notifications"
 drop policy if exists "Users manage own civic feedback" on public.civic_user_feedback;
 create policy "Users manage own civic feedback"
   on public.civic_user_feedback
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "Users manage own civic relevance feedback" on public.civic_relevance_feedback;
+create policy "Users manage own civic relevance feedback"
+  on public.civic_relevance_feedback
   for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
@@ -844,4 +917,13 @@ as $$
 $$;
 
 grant execute on function public.record_civic_notification_interaction(uuid, text)
+  to authenticated, service_role;
+
+grant select on public.civic_event_burden_scores
+  to anon, authenticated;
+
+grant all on public.civic_event_burden_scores
+  to service_role;
+
+grant all on public.civic_relevance_feedback
   to authenticated, service_role;

@@ -66,6 +66,10 @@ export default function MethodologyPage() {
               "Briefs must point back to official source links. Missing source evidence lowers confidence instead of producing a stronger claim.",
             ],
             [
+              "Burden",
+              "Resident-effort scores estimate source, decision, actor, timing, and action-path friction without claiming objective policy importance.",
+            ],
+            [
               "Feedback",
               "Resident feedback separates position, intensity, affectedness, reason, and desired outcome.",
             ],

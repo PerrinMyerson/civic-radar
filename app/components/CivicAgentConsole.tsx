@@ -19,6 +19,10 @@ import {
 } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  civicBurdenForEvent,
+  type CivicBurdenResult,
+} from "../../shared/civic-burden";
 
 declare global {
   interface Window {
@@ -120,6 +124,14 @@ type NotifyFrequency = "immediate" | "daily" | "weekly" | "off";
 type TopicType = "topic" | "bill_keyword" | "agency" | "committee" | "local_body";
 type AgentView = "alerts" | "agent" | "signals" | "public";
 type EventKind = "federal" | "local";
+type OnboardingStep = "welcome" | "regions" | "topics" | "alerts" | "context";
+type RelevanceFeedbackType =
+  | "relevant"
+  | "not_relevant"
+  | "wrong_region"
+  | "wrong_topic"
+  | "too_late"
+  | "important_unclear";
 
 type CivicProfile = {
   user_id: string;
@@ -128,6 +140,8 @@ type CivicProfile = {
   home_region: string;
   notification_email: string;
   notify_frequency: NotifyFrequency;
+  onboarding_completed_at: string | null;
+  onboarding_version: string;
 };
 
 type CivicRegion = {
@@ -170,6 +184,7 @@ type CivicEvent = {
   regionLabel: string;
   sourceId: string;
   searchText: string;
+  burden: CivicBurdenResult;
 };
 
 type MatchedEvent = CivicEvent & {
@@ -187,6 +202,9 @@ type PolicyBrief = {
   decisionPending: string;
   engagementSteps: string[];
   personalRead: string;
+  burdenLabel: CivicBurdenResult["label"];
+  burdenReasons: string[];
+  burdenScore: number;
   relevanceScore: number | null;
   sourceProof: string;
   suggestedPosition: string;
@@ -241,6 +259,28 @@ const DEFAULT_TOPIC_FORM: Pick<CivicTopic, "topic_type" | "label" | "query"> = {
   label: "",
   query: "",
 };
+
+const ONBOARDING_VERSION = "resident-burden-v1";
+
+const ONBOARDING_STEPS: Array<{ id: OnboardingStep; label: string }> = [
+  { id: "welcome", label: "Privacy" },
+  { id: "regions", label: "Regions" },
+  { id: "topics", label: "Topics" },
+  { id: "alerts", label: "Alerts" },
+  { id: "context", label: "Context" },
+];
+
+const RELEVANCE_FEEDBACK_OPTIONS: Array<{
+  label: string;
+  type: RelevanceFeedbackType;
+}> = [
+  { label: "Relevant", type: "relevant" },
+  { label: "Not relevant", type: "not_relevant" },
+  { label: "Wrong region", type: "wrong_region" },
+  { label: "Wrong topic", type: "wrong_topic" },
+  { label: "Too late", type: "too_late" },
+  { label: "Important but unclear", type: "important_unclear" },
+];
 
 const POLICY_DOMAINS = [
   {
@@ -467,7 +507,7 @@ function flattenEvents(data: CivicData | null): CivicEvent[] {
         [title, summary, sourceName, item.chamber, feed.source].join(" "),
       );
 
-      return {
+      const event = {
         id: item.id || `${feed.id}:${title}`,
         eventKind: "federal" as const,
         title,
@@ -478,6 +518,11 @@ function flattenEvents(data: CivicData | null): CivicEvent[] {
         regionLabel: "Federal",
         sourceId: feed.id,
         searchText,
+      };
+
+      return {
+        ...event,
+        burden: civicBurdenForEvent(event),
       };
     }),
   );
@@ -498,7 +543,7 @@ function flattenEvents(data: CivicData | null): CivicEvent[] {
       ].join(" "),
     );
 
-    return {
+    const event = {
       id: meeting.id,
       eventKind: "local" as const,
       title,
@@ -514,6 +559,11 @@ function flattenEvents(data: CivicData | null): CivicEvent[] {
       regionLabel,
       sourceId: meeting.sourceId ?? "",
       searchText,
+    };
+
+    return {
+      ...event,
+      burden: civicBurdenForEvent(event),
     };
   });
 
@@ -702,6 +752,7 @@ function buildPolicyBrief(
     matchedEvent?.relevanceReasons ??
     relevanceForEvent(event, [], [], []).relevanceReasons;
   const relevanceScore = matchedEvent?.relevanceScore ?? null;
+  const burden = event.burden;
   const concernText = concerns.length
     ? `Watch for downside risk around ${concerns.join(", ")}.`
     : "Watch for implementation risk, budget impact, and who is left out.";
@@ -723,6 +774,9 @@ function buildPolicyBrief(
       relevanceReasons.length > 0
         ? relevanceReasons
         : ["current civic feed item", "watchlist match not yet established"],
+    burdenLabel: burden.label,
+    burdenReasons: burden.reasons,
+    burdenScore: burden.score,
     personalRead: `${goalText} ${concernText}`,
     relevanceScore,
     sourceProof: event.sourceUrl
@@ -839,6 +893,21 @@ function Pill({ children }: { children: ReactNode }) {
   );
 }
 
+function BurdenPill({ burden }: { burden: CivicBurdenResult }) {
+  const tone =
+    burden.label === "High burden"
+      ? "bg-rose-50 text-rose-700 ring-rose-200"
+      : burden.label === "Moderate burden"
+        ? "bg-amber-50 text-amber-700 ring-amber-200"
+        : "bg-emerald-50 text-emerald-700 ring-emerald-200";
+
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-medium ring-1 ${tone}`}>
+      {burden.score}/100 {burden.label}
+    </span>
+  );
+}
+
 export default function CivicAgentConsole({
   data,
   selectedSource,
@@ -899,6 +968,9 @@ export default function CivicAgentConsole({
     min_threshold: 5,
   });
   const [candidateSummary, setCandidateSummary] = useState<CandidateTopicSummary | null>(null);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("welcome");
+  const [feedbackSaving, setFeedbackSaving] = useState("");
   const syncedMatchesRef = useRef("");
 
   const civicEvents = useMemo(() => flattenEvents(data), [data]);
@@ -928,6 +1000,9 @@ export default function CivicAgentConsole({
 
   const isConfigured = Boolean(supabase);
   const isSignedIn = Boolean(session?.access_token);
+  const showOnboarding = Boolean(
+    isSignedIn && profile && !profile.onboarding_completed_at && !onboardingDismissed,
+  );
   const methodologyHref =
     typeof window !== "undefined" && window.__CIVIC_DATA_URL__
       ? "./methodology.html"
@@ -996,6 +1071,8 @@ export default function CivicAgentConsole({
           home_region: "",
           notification_email: session.user.email ?? "",
           notify_frequency: "daily",
+          onboarding_completed_at: null,
+          onboarding_version: ONBOARDING_VERSION,
         } satisfies CivicProfile);
       const loadedContext =
         contextRows[0] ??
@@ -1239,6 +1316,8 @@ export default function CivicAgentConsole({
 
       if (payload.access_token && payload.user) {
         setAndSaveSession(normalizeSession(payload as SupabaseSession));
+        setOnboardingDismissed(false);
+        setOnboardingStep("welcome");
         setAuthSuccess("Signed in");
         return;
       }
@@ -1264,6 +1343,8 @@ export default function CivicAgentConsole({
     setRegions([]);
     setTopics([]);
     setContext(DEFAULT_CONTEXT);
+    setOnboardingDismissed(false);
+    setOnboardingStep("welcome");
   }
 
   async function saveProfile() {
@@ -1304,7 +1385,7 @@ export default function CivicAgentConsole({
 
   async function saveContext() {
     if (!supabase || !session?.access_token || !session.user.id) {
-      return;
+      return false;
     }
 
     setDataLoading(true);
@@ -1335,8 +1416,10 @@ export default function CivicAgentConsole({
 
       setContext(rows[0] ?? DEFAULT_CONTEXT);
       setDataSuccess("Civic context saved");
+      return true;
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to save context");
+      return false;
     } finally {
       setDataLoading(false);
     }
@@ -1386,6 +1469,14 @@ export default function CivicAgentConsole({
       );
 
       setRegions((current) => [...rows, ...current]);
+      setProfileForm((current) =>
+        current.home_region
+          ? current
+          : {
+              ...current,
+              home_region: label,
+            },
+      );
       setRegionForm({ label: "", radius_miles: 75 });
       setDataSuccess("Region added");
     } catch (error) {
@@ -1395,13 +1486,13 @@ export default function CivicAgentConsole({
     }
   }
 
-  async function addTopic() {
+  async function addTopic(topic?: Partial<Pick<CivicTopic, "label" | "query" | "topic_type">>) {
     if (!supabase || !session?.access_token || !session.user.id) {
       return;
     }
 
-    const label = topicForm.label.trim();
-    const query = topicForm.query.trim() || label;
+    const label = (topic?.label ?? topicForm.label).trim();
+    const query = (topic?.query ?? topicForm.query).trim() || label;
     if (!label || !query) {
       setDataError("Topic label and query are required");
       return;
@@ -1418,7 +1509,7 @@ export default function CivicAgentConsole({
         {
           body: {
             user_id: session.user.id,
-            topic_type: topicForm.topic_type,
+            topic_type: topic?.topic_type ?? topicForm.topic_type,
             label,
             query,
           },
@@ -1431,7 +1522,9 @@ export default function CivicAgentConsole({
       );
 
       setTopics((current) => [...rows, ...current]);
-      setTopicForm(DEFAULT_TOPIC_FORM);
+      if (!topic) {
+        setTopicForm(DEFAULT_TOPIC_FORM);
+      }
       setDataSuccess("Topic added");
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to add topic");
@@ -1466,6 +1559,91 @@ export default function CivicAgentConsole({
       setDataError(error instanceof Error ? error.message : "Unable to delete row");
     } finally {
       setDataLoading(false);
+    }
+  }
+
+  async function completeOnboarding() {
+    if (!supabase || !session?.access_token || !session.user.id) {
+      return;
+    }
+
+    setDataLoading(true);
+    setDataError("");
+    setDataSuccess("");
+
+    try {
+      const completedAt = new Date().toISOString();
+      const rows = await supabaseRequest<CivicProfile[]>(
+        supabase,
+        "/rest/v1/civic_profiles?on_conflict=user_id&select=*",
+        {
+          body: {
+            user_id: session.user.id,
+            email: session.user.email ?? authEmail.trim(),
+            ...profileForm,
+            onboarding_completed_at: completedAt,
+            onboarding_version: ONBOARDING_VERSION,
+          },
+          headers: {
+            Prefer: "resolution=merge-duplicates,return=representation",
+          },
+          method: "POST",
+          token: session.access_token,
+        },
+      );
+
+      setProfile(rows[0] ?? {
+        user_id: session.user.id,
+        email: session.user.email ?? authEmail.trim(),
+        ...profileForm,
+        onboarding_completed_at: completedAt,
+        onboarding_version: ONBOARDING_VERSION,
+      });
+      setOnboardingDismissed(false);
+      setDataSuccess("Onboarding complete");
+      await syncAlertMatches(true);
+    } catch (error) {
+      setDataError(error instanceof Error ? error.message : "Unable to complete onboarding");
+    } finally {
+      setDataLoading(false);
+    }
+  }
+
+  async function saveRelevanceFeedback(event: CivicEvent, feedbackType: RelevanceFeedbackType) {
+    if (!supabase || !session?.access_token || !session.user.id) {
+      return;
+    }
+
+    setFeedbackSaving(`${event.id}:${feedbackType}`);
+    setDataError("");
+    setDataSuccess("");
+
+    try {
+      await supabaseRequest<unknown>(
+        supabase,
+        "/rest/v1/civic_relevance_feedback?on_conflict=user_id,event_id,event_kind,feedback_type",
+        {
+          body: {
+            comment: "",
+            event_id: event.id,
+            event_kind: event.eventKind,
+            feedback_type: feedbackType,
+            user_id: session.user.id,
+          },
+          headers: {
+            Prefer: "resolution=merge-duplicates",
+          },
+          method: "POST",
+          token: session.access_token,
+        },
+      );
+      setDataSuccess("Relevance feedback saved");
+    } catch (error) {
+      setDataError(
+        error instanceof Error ? error.message : "Unable to save relevance feedback",
+      );
+    } finally {
+      setFeedbackSaving("");
     }
   }
 
@@ -1504,8 +1682,11 @@ export default function CivicAgentConsole({
         });
 
         if (edgeResponse.ok) {
-          const payload = (await edgeResponse.json()) as { brief?: PolicyBrief };
-          nextBrief = payload.brief ?? nextBrief;
+          const payload = (await edgeResponse.json()) as { brief?: Partial<PolicyBrief> };
+          nextBrief = {
+            ...nextBrief,
+            ...(payload.brief ?? {}),
+          };
         }
       } catch {
         // Static and local builds keep the deterministic fallback when functions are absent.
@@ -1771,6 +1952,39 @@ export default function CivicAgentConsole({
     return () => window.clearTimeout(resetTimer);
   }, [activeEventKey]);
 
+  const onboardingStepIndex = Math.max(
+    0,
+    ONBOARDING_STEPS.findIndex((step) => step.id === onboardingStep),
+  );
+  const onboardingPreviewEvents =
+    matchedEvents.length > 0 ? matchedEvents.slice(0, 3) : civicEvents.slice(0, 3);
+
+  function renderFeedbackButtons(event: CivicEvent) {
+    if (!isSignedIn) {
+      return null;
+    }
+
+    return (
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {RELEVANCE_FEEDBACK_OPTIONS.map((option) => {
+          const savingKey = `${event.id}:${option.type}`;
+
+          return (
+            <button
+              className="rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-medium text-zinc-600 hover:border-teal-500 hover:text-teal-700 disabled:cursor-wait disabled:opacity-60"
+              disabled={feedbackSaving === savingKey}
+              key={option.type}
+              onClick={() => void saveRelevanceFeedback(event, option.type)}
+              type="button"
+            >
+              {feedbackSaving === savingKey ? "Saving" : option.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <section className="mt-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -1815,6 +2029,7 @@ export default function CivicAgentConsole({
           <div className="grid gap-1">
             <FieldLabel>Email</FieldLabel>
             <input
+              autoComplete="email"
               className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
               onChange={(event) => setAuthEmail(event.target.value)}
               required
@@ -1825,6 +2040,7 @@ export default function CivicAgentConsole({
           <div className="grid gap-1">
             <FieldLabel>Password</FieldLabel>
             <input
+              autoComplete={authMode === "signup" ? "new-password" : "current-password"}
               className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
               minLength={6}
               onChange={(event) => setAuthPassword(event.target.value)}
@@ -1854,6 +2070,357 @@ export default function CivicAgentConsole({
           </button>
           <div className="lg:col-span-4">{statusMessage(authError, authSuccess)}</div>
         </form>
+      ) : null}
+
+      {showOnboarding ? (
+        <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50/60 p-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <FieldLabel>Account setup</FieldLabel>
+              <h3 className="mt-1 text-lg font-semibold text-zinc-950">
+                Tune Civic Radar for your region and topics
+              </h3>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+                onClick={() => setOnboardingDismissed(true)}
+                type="button"
+              >
+                Skip for now
+              </button>
+              <button
+                className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
+                disabled={dataLoading}
+                onClick={() => void completeOnboarding()}
+                type="button"
+              >
+                Finish setup
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-2 sm:grid-cols-5">
+            {ONBOARDING_STEPS.map((step, index) => (
+              <button
+                className={`rounded-md px-2 py-2 text-xs font-medium ${
+                  onboardingStep === step.id
+                    ? "bg-zinc-950 text-white"
+                    : index < onboardingStepIndex
+                      ? "bg-white text-teal-700 ring-1 ring-teal-200"
+                      : "bg-white text-zinc-600 ring-1 ring-zinc-200"
+                }`}
+                key={step.id}
+                onClick={() => setOnboardingStep(step.id)}
+                type="button"
+              >
+                {step.label}
+              </button>
+            ))}
+          </div>
+
+          {onboardingStep === "welcome" ? (
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
+              <div className="rounded-lg bg-white p-3 text-sm leading-6 text-zinc-700 ring-1 ring-teal-100">
+                Watchlists, notification settings, and optional private context are saved to
+                your account. Public radar browsing still works without this setup.
+              </div>
+              <div className="grid gap-2">
+                <input
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      display_name: event.target.value,
+                    }))
+                  }
+                  placeholder="Display name"
+                  value={profileForm.display_name}
+                />
+                <select
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setProfileForm((current) => ({
+                      ...current,
+                      notify_frequency: event.target.value as NotifyFrequency,
+                    }))
+                  }
+                  value={profileForm.notify_frequency}
+                >
+                  <option value="immediate">Immediate alerts</option>
+                  <option value="daily">Daily digest</option>
+                  <option value="weekly">Weekly digest</option>
+                  <option value="off">Off</option>
+                </select>
+              </div>
+              <button
+                className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+                onClick={() => setOnboardingStep("regions")}
+                type="button"
+              >
+                Continue
+              </button>
+            </div>
+          ) : null}
+
+          {onboardingStep === "regions" ? (
+            <div className="mt-3 grid gap-3">
+              <div className="grid gap-2 md:grid-cols-[1fr_120px_auto_auto]">
+                <input
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setRegionForm((current) => ({ ...current, label: event.target.value }))
+                  }
+                  placeholder="Home region or public body"
+                  value={regionForm.label}
+                />
+                <input
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  min={1}
+                  onChange={(event) =>
+                    setRegionForm((current) => ({
+                      ...current,
+                      radius_miles: Number(event.target.value),
+                    }))
+                  }
+                  type="number"
+                  value={regionForm.radius_miles}
+                />
+                <button
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                  onClick={() => void addRegion()}
+                  type="button"
+                >
+                  Add region
+                </button>
+                {selectedSource ? (
+                  <button
+                    className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+                    onClick={() =>
+                      void addRegion({
+                        label: selectedSource.place,
+                        source_id: selectedSource.id,
+                        jurisdiction_kind: selectedSource.kind,
+                        lat: selectedSource.lat,
+                        lng: selectedSource.lng,
+                      })
+                    }
+                    type="button"
+                  >
+                    Watch selected
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {regions.map((region) => (
+                  <Pill key={region.id}>{region.label}</Pill>
+                ))}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+                  onClick={() => setOnboardingStep("topics")}
+                  type="button"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {onboardingStep === "topics" ? (
+            <div className="mt-3 grid gap-3">
+              <div className="flex flex-wrap gap-2">
+                {POLICY_DOMAINS.map((domain) => (
+                  <button
+                    className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-teal-200 hover:bg-teal-50"
+                    key={domain.label}
+                    onClick={() =>
+                      void addTopic({
+                        label: domain.label,
+                        query: domain.terms.join(" "),
+                        topic_type: "topic",
+                      })
+                    }
+                    type="button"
+                  >
+                    {domain.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid gap-2 md:grid-cols-[140px_1fr_1fr_auto]">
+                <select
+                  className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setTopicForm((current) => ({
+                      ...current,
+                      topic_type: event.target.value as TopicType,
+                    }))
+                  }
+                  value={topicForm.topic_type}
+                >
+                  <option value="topic">Topic</option>
+                  <option value="bill_keyword">Bill keyword</option>
+                  <option value="agency">Agency</option>
+                  <option value="committee">Committee</option>
+                  <option value="local_body">Local body</option>
+                </select>
+                <input
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setTopicForm((current) => ({ ...current, label: event.target.value }))
+                  }
+                  placeholder="Label"
+                  value={topicForm.label}
+                />
+                <input
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setTopicForm((current) => ({ ...current, query: event.target.value }))
+                  }
+                  placeholder="Match text"
+                  value={topicForm.query}
+                />
+                <button
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                  onClick={() => void addTopic()}
+                  type="button"
+                >
+                  Add topic
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {topics.map((topic) => (
+                  <Pill key={topic.id}>{topic.label}</Pill>
+                ))}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+                  onClick={() => {
+                    void syncAlertMatches(true);
+                    setOnboardingStep("alerts");
+                  }}
+                  type="button"
+                >
+                  Show matches
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {onboardingStep === "alerts" ? (
+            <div className="mt-3 grid gap-2">
+              {onboardingPreviewEvents.map((event) => (
+                <article
+                  className="rounded-lg border border-zinc-200 bg-white p-3"
+                  key={`${event.eventKind}:${event.id}:onboarding`}
+                >
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                        {event.eventKind} · {event.sourceName}
+                      </p>
+                      <p className="mt-1 text-sm font-semibold leading-5 text-zinc-950">
+                        {event.title}
+                      </p>
+                    </div>
+                    <BurdenPill burden={event.burden} />
+                  </div>
+                  {"relevanceReasons" in event &&
+                  (event as MatchedEvent).relevanceReasons.length > 0 ? (
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      Why: {(event as MatchedEvent).relevanceReasons.join("; ")}
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs leading-5 text-zinc-500">
+                      Add a region and topic to create stronger personal matches.
+                    </p>
+                  )}
+                  {renderFeedbackButtons(event)}
+                </article>
+              ))}
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                  onClick={() => void completeOnboarding()}
+                  type="button"
+                >
+                  Finish without context
+                </button>
+                <button
+                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+                  onClick={() => setOnboardingStep("context")}
+                  type="button"
+                >
+                  Add context
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {onboardingStep === "context" ? (
+            <div className="mt-3 grid gap-2">
+              <div className="grid gap-2 md:grid-cols-2">
+                <textarea
+                  className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setContextForm((current) => ({ ...current, goals: event.target.value }))
+                  }
+                  placeholder="Goals, one per line"
+                  value={contextForm.goals}
+                />
+                <textarea
+                  className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                  onChange={(event) =>
+                    setContextForm((current) => ({
+                      ...current,
+                      concerns: event.target.value,
+                    }))
+                  }
+                  placeholder="Concerns, one per line"
+                  value={contextForm.concerns}
+                />
+              </div>
+              <textarea
+                className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                onChange={(event) =>
+                  setContextForm((current) => ({
+                    ...current,
+                    life_context: event.target.value,
+                  }))
+                }
+                placeholder="Optional private life context"
+                value={contextForm.life_context}
+              />
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                  onClick={() => void completeOnboarding()}
+                  type="button"
+                >
+                  Skip context
+                </button>
+                <button
+                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
+                  onClick={() => {
+                    void (async () => {
+                      const saved = await saveContext();
+                      if (saved) {
+                        await completeOnboarding();
+                      }
+                    })();
+                  }}
+                  type="button"
+                >
+                  Save and finish
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {statusMessage(dataError, dataSuccess)}
+        </div>
       ) : null}
 
       {isSignedIn ? (
@@ -2146,7 +2713,7 @@ export default function CivicAgentConsole({
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
                   disabled={dataLoading}
-                  onClick={saveContext}
+                  onClick={() => void saveContext()}
                   type="button"
                 >
                   <ShieldCheck className="h-4 w-4" />
@@ -2198,60 +2765,71 @@ export default function CivicAgentConsole({
                 <div className="mt-3 grid max-h-[560px] gap-2 overflow-auto pr-1">
                   {(matchedEvents.length > 0 ? matchedEvents : civicEvents.slice(0, 8)).map(
                     (event) => (
-                      <button
-                        className={`rounded-lg border p-3 text-left transition ${
+                      <article
+                        className={`rounded-lg border p-3 transition ${
                           activeEvent?.id === event.id
                             ? "border-teal-500 bg-teal-50"
                             : "border-zinc-200 bg-white hover:border-zinc-300"
                         }`}
                         key={`${event.eventKind}:${event.id}`}
-                        onClick={() => {
-                          setActiveEventId(event.id);
-                          setAgentView("agent");
-                        }}
-                        type="button"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                              {event.eventKind} · {event.sourceName}
-                            </p>
-                            <p className="mt-1 text-sm font-semibold leading-5 text-zinc-950">
-                              {event.title}
-                            </p>
-                            {event.summary ? (
-                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-600">
-                                {event.summary}
+                        <button
+                          className="block w-full text-left"
+                          onClick={() => {
+                            setActiveEventId(event.id);
+                            setAgentView("agent");
+                          }}
+                          type="button"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                                {event.eventKind} · {event.sourceName}
                               </p>
-                            ) : null}
+                              <p className="mt-1 text-sm font-semibold leading-5 text-zinc-950">
+                                {event.title}
+                              </p>
+                              {event.summary ? (
+                                <p className="mt-1 line-clamp-2 text-xs leading-5 text-zinc-600">
+                                  {event.summary}
+                                </p>
+                              ) : null}
+                            </div>
+                            <span className="shrink-0 text-xs text-zinc-500">
+                              {eventDateLabel(event.eventDate)}
+                            </span>
                           </div>
-                          <span className="shrink-0 text-xs text-zinc-500">
-                            {eventDateLabel(event.eventDate)}
-                          </span>
-                        </div>
-                        {"matchedTerms" in event || "matchedRegions" in event ? (
                           <div className="mt-2 flex flex-wrap gap-1.5">
+                            <BurdenPill burden={event.burden} />
                             {"relevanceScore" in event ? (
                               <Pill>{(event as MatchedEvent).relevanceScore}/100 relevance</Pill>
                             ) : null}
                             {"confidence" in event ? (
                               <Pill>{(event as MatchedEvent).confidence} confidence</Pill>
                             ) : null}
-                            {(event as MatchedEvent).matchedRegions?.map((label) => (
-                              <Pill key={label}>{label}</Pill>
-                            ))}
-                            {(event as MatchedEvent).matchedTerms?.map((label) => (
-                              <Pill key={label}>{label}</Pill>
-                            ))}
+                            {"matchedRegions" in event
+                              ? (event as MatchedEvent).matchedRegions.map((label) => (
+                                  <Pill key={label}>{label}</Pill>
+                                ))
+                              : null}
+                            {"matchedTerms" in event
+                              ? (event as MatchedEvent).matchedTerms.map((label) => (
+                                  <Pill key={label}>{label}</Pill>
+                                ))
+                              : null}
                           </div>
-                        ) : null}
-                        {"relevanceReasons" in event &&
-                        (event as MatchedEvent).relevanceReasons.length > 0 ? (
-                          <p className="mt-2 text-xs leading-5 text-zinc-500">
-                            Why: {(event as MatchedEvent).relevanceReasons.join("; ")}
+                          {"relevanceReasons" in event &&
+                          (event as MatchedEvent).relevanceReasons.length > 0 ? (
+                            <p className="mt-2 text-xs leading-5 text-zinc-500">
+                              Why: {(event as MatchedEvent).relevanceReasons.join("; ")}
+                            </p>
+                          ) : null}
+                          <p className="mt-1 text-xs leading-5 text-zinc-500">
+                            Burden: {event.burden.reasons.join("; ")}
                           </p>
-                        ) : null}
-                      </button>
+                        </button>
+                        {renderFeedbackButtons(event)}
+                      </article>
                     ),
                   )}
                 </div>
@@ -2302,6 +2880,7 @@ export default function CivicAgentConsole({
                         {brief.relevanceScore !== null ? (
                           <Pill>{brief.relevanceScore}/100 relevance</Pill>
                         ) : null}
+                        <Pill>{brief.burdenScore}/100 {brief.burdenLabel}</Pill>
                       </div>
                       <div className="rounded-lg bg-zinc-50 p-3">
                         <p className="text-sm font-semibold text-zinc-950">What happened</p>
@@ -2323,6 +2902,14 @@ export default function CivicAgentConsole({
                           <p className="mt-1 text-sm leading-6 text-zinc-700">
                             {brief.personalRead}
                           </p>
+                        </div>
+                        <div className="rounded-lg bg-zinc-50 p-3">
+                          <p className="text-sm font-semibold text-zinc-950">Resident burden</p>
+                          <ul className="mt-2 grid gap-2 text-sm leading-6 text-zinc-700">
+                            {brief.burdenReasons.map((reason) => (
+                              <li key={reason}>{reason}</li>
+                            ))}
+                          </ul>
                         </div>
                         <div className="rounded-lg bg-zinc-50 p-3">
                           <p className="text-sm font-semibold text-zinc-950">Decision pending</p>

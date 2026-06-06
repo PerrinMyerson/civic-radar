@@ -1,3 +1,5 @@
+import { civicBurdenForEvent } from "../../../shared/civic-burden.ts";
+
 export const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -331,6 +333,15 @@ export function buildEvidenceBrief(input: {
       : sourceUrl
         ? "partial"
         : "insufficient";
+  const burden = civicBurdenForEvent({
+    eventDate,
+    eventKind: event.eventKind,
+    sourceConfidence: confidence,
+    sourceName,
+    sourceUrl,
+    summary: event.summary ?? "",
+    title: event.title,
+  });
   const reasons = input.match?.reasons ?? [];
   const goals = input.context?.goals?.slice(0, 3) ?? [];
   const concerns = input.context?.concerns?.slice(0, 3) ?? [];
@@ -378,5 +389,8 @@ export function buildEvidenceBrief(input: {
       reasons.length > 0
         ? reasons
         : ["current civic feed item", confidence === "insufficient" ? "source evidence incomplete" : "official source available"],
+    burdenLabel: burden.label,
+    burdenReasons: burden.reasons,
+    burdenScore: burden.score,
   };
 }

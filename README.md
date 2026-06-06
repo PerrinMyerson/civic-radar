@@ -76,9 +76,12 @@ also set `window.__SUPABASE_URL__` and `window.__SUPABASE_ANON_KEY__` in
 The dashboard includes a Supabase-backed resident civic-aid workspace:
 
 - Accounts through Supabase Auth.
+- Post-signup onboarding while the public radar remains open without login.
 - Region, jurisdiction, topic, bill keyword, agency, committee, and local-body
   watchlists.
 - Current alert matching against loaded federal and local civic events.
+- Deterministic civic burden scoring for source, decision, actor, timing, and
+  action-path friction.
 - Private user goals, concerns, life context, notification preferences, and
   consent flags protected by row-level security.
 - Evidence-bound civic briefs with confidence states and citations back to
@@ -100,9 +103,11 @@ The SQL file also defines normalized civic-aid tables:
 
 - `civic_events` and `civic_event_sources` store normalized public items.
 - `civic_event_relevance_scores` records why an item matched a resident.
+- `civic_event_burden_scores` stores deterministic resident-effort scores.
 - `civic_notifications` stores in-app and email notification state.
 - `civic_user_feedback` captures position, intensity, affectedness, reason, and
   desired outcome.
+- `civic_relevance_feedback` logs lightweight alert relevance calibration.
 - `civic_event_outcomes` and `civic_explanation_audits` support outcome tracking
   and source-grounded explanation review.
 

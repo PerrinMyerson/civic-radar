@@ -4,6 +4,7 @@ import {
   normalizeCivicData,
   supabaseRest,
 } from "../_shared/civic.ts";
+import { civicBurdenForEvent } from "../../../shared/civic-burden.ts";
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") {
@@ -50,6 +51,31 @@ Deno.serve(async (request) => {
           method: "POST",
         });
       }
+
+      await supabaseRest(
+        "/rest/v1/civic_event_burden_scores?on_conflict=event_id,event_kind",
+        {
+          body: events.map((event) => {
+            const burden = civicBurdenForEvent(event);
+
+            return {
+              action_ambiguity: burden.actionAmbiguity,
+              actor_ambiguity: burden.actorAmbiguity,
+              computed_at: now,
+              decision_ambiguity: burden.decisionAmbiguity,
+              event_id: event.id,
+              event_kind: event.event_kind,
+              label: burden.label,
+              reasons: burden.reasons,
+              score: burden.score,
+              source_friction: burden.sourceFriction,
+              time_ambiguity: burden.timeAmbiguity,
+            };
+          }),
+          headers: { Prefer: "resolution=merge-duplicates" },
+          method: "POST",
+        },
+      );
     }
 
     return jsonResponse({
