@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Personal Civic Radar watchlists, account alerts, evidence-bound briefs, and civic feedback."
+    />
+    <link rel="icon" href="./favicon.svg" />
+    <title>My Civic Radar</title>
+    <script>
+      window.__CIVIC_DATA_URL__ = new URL("./civic-data.json", window.location.href).href;
+      window.__SUPABASE_URL__ = "https://aknpdgbtbpmfrpeuivyq.supabase.co";
+      window.__SUPABASE_ANON_KEY__ =
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrbnBkZ2J0YnBtZnJwZXVpdnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1OTY4MjIsImV4cCI6MjA5NjE3MjgyMn0.rmFb_8APPEyAXxx0bJ3AOx8gXlKZVIbbQFkNF_ZISKQ";
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./my-civic-radar.tsx"></script>
+  </body>
+</html>

@@ -15,10 +15,10 @@ import {
   Radio,
   RefreshCw,
   Search,
+  UserRound,
   Video,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import CivicAgentConsole from "./CivicAgentConsole";
 
 type FeedItem = {
   id: string;
@@ -102,6 +102,10 @@ type UserPosition = {
 
 type Scope = "all" | "federal" | "local";
 type FeedFilter = "all" | "House" | "Senate" | "Congress" | "GovInfo" | "Agencies";
+
+type CivicDashboardProps = {
+  myRadarHref?: string;
+};
 
 declare global {
   interface Window {
@@ -447,7 +451,7 @@ function CivicMap({
   }, [ready, selectedId, sources]);
 
   return (
-    <div className="relative min-h-[380px] overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100 md:min-h-[510px]">
+    <div className="relative min-h-[360px] overflow-hidden rounded-lg border border-zinc-200/80 bg-zinc-100 shadow-inner md:min-h-[520px]">
       <div ref={containerRef} className="absolute inset-0" />
       {!ready && !mapError ? (
         <div className="absolute inset-0 grid place-items-center bg-[#f2f5f1] text-sm text-zinc-600">
@@ -470,7 +474,7 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
   const sourceLabel = meeting.sourceName ? `${meeting.sourceName}, ${meeting.place}` : "";
 
   return (
-    <article className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+    <article className="rounded-lg border border-zinc-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(24_31_27/0.06)] transition hover:border-zinc-300">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -514,7 +518,7 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
       <div className="mt-4 flex flex-wrap gap-2">
         {meeting.agendaUrl ? (
           <a
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:bg-white hover:text-teal-700"
             href={meeting.agendaUrl}
             rel="noreferrer"
             target="_blank"
@@ -525,7 +529,7 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
         ) : null}
         {meeting.minutesUrl ? (
           <a
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:bg-white hover:text-teal-700"
             href={meeting.minutesUrl}
             rel="noreferrer"
             target="_blank"
@@ -536,7 +540,7 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
         ) : null}
         {meeting.videoUrl ? (
           <a
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:bg-white hover:text-teal-700"
             href={meeting.videoUrl}
             rel="noreferrer"
             target="_blank"
@@ -547,7 +551,7 @@ function MeetingCard({ meeting }: { meeting: Meeting }) {
         ) : null}
         {meeting.sourceUrl ? (
           <a
-            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+            className="inline-flex items-center gap-1 rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:border-teal-500 hover:bg-white hover:text-teal-700"
             href={meeting.sourceUrl}
             rel="noreferrer"
             target="_blank"
@@ -574,10 +578,10 @@ function SourceRow({
 }) {
   return (
     <button
-      className={`w-full rounded-lg border p-3 text-left shadow-sm transition ${
+      className={`w-full rounded-lg border p-3 text-left transition ${
         selected
-          ? "border-teal-500 bg-teal-50"
-          : "border-zinc-200 bg-white hover:border-zinc-300 hover:bg-zinc-50"
+          ? "border-teal-600 bg-white shadow-[0_8px_22px_rgb(15_118_110/0.14)] ring-1 ring-teal-500/25"
+          : "border-zinc-200/80 bg-white shadow-[0_1px_2px_rgb(24_31_27/0.05)] hover:border-zinc-300 hover:bg-zinc-50"
       }`}
       onClick={() => onSelect(source.id)}
       type="button"
@@ -605,7 +609,7 @@ function SourceRow({
 
 function FederalFeedCard({ feed }: { feed: FederalFeed }) {
   return (
-    <article className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
+    <article className="rounded-lg border border-zinc-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -614,7 +618,7 @@ function FederalFeedCard({ feed }: { feed: FederalFeed }) {
           <h3 className="mt-1 text-sm font-semibold text-zinc-950">{feed.source}</h3>
         </div>
         <a
-          className="rounded-md border border-zinc-200 p-1.5 text-zinc-500 hover:border-teal-500 hover:text-teal-700"
+          className="rounded-md border border-zinc-200 bg-zinc-50 p-1.5 text-zinc-500 hover:border-teal-500 hover:bg-white hover:text-teal-700"
           href={feed.sourceUrl}
           rel="noreferrer"
           target="_blank"
@@ -633,7 +637,7 @@ function FederalFeedCard({ feed }: { feed: FederalFeed }) {
         <div className="mt-4 space-y-3">
           {feed.items.slice(0, 4).map((item) => (
             <a
-              className="block rounded-md border border-transparent p-2 -mx-2 hover:border-zinc-200 hover:bg-zinc-50"
+              className="-mx-2 block rounded-md border border-transparent p-2 hover:border-zinc-200 hover:bg-zinc-50"
               href={item.url}
               key={item.id}
               rel="noreferrer"
@@ -658,13 +662,52 @@ function FederalFeedCard({ feed }: { feed: FederalFeed }) {
 
 function EmptyState({ label }: { label: string }) {
   return (
-    <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500">
+    <div className="rounded-lg border border-dashed border-zinc-300 bg-white/70 p-6 text-center text-sm text-zinc-500">
       {label}
     </div>
   );
 }
 
-export default function CivicDashboard() {
+function StatCard({
+  accent = "text-teal-700",
+  className = "",
+  Icon,
+  label,
+  suffix,
+  value,
+}: {
+  accent?: string;
+  className?: string;
+  Icon: typeof Landmark;
+  label: string;
+  suffix?: string;
+  value: string | number;
+}) {
+  return (
+    <div
+      className={`rounded-lg border border-zinc-200/80 bg-white/95 p-3 shadow-[0_1px_2px_rgb(24_31_27/0.06)] md:p-4 ${className}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+          {label}
+        </p>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-zinc-50 ring-1 ring-zinc-200">
+          <Icon className={`h-4 w-4 ${accent}`} />
+        </span>
+      </div>
+      <p className="mt-3 text-2xl font-semibold leading-none text-zinc-950">
+        {value}
+        {suffix ? (
+          <span className="ml-0.5 text-base font-normal text-zinc-400">{suffix}</span>
+        ) : null}
+      </p>
+    </div>
+  );
+}
+
+export default function CivicDashboard({
+  myRadarHref = "/my-civic-radar",
+}: CivicDashboardProps) {
   const [data, setData] = useState<CivicData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -914,93 +957,97 @@ export default function CivicDashboard() {
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f7f4] text-zinc-950">
-      <header className="sticky top-0 z-30 border-b border-zinc-200 bg-[#f5f7f4]/95 backdrop-blur">
-        <div className="mx-auto flex max-w-[1600px] flex-col gap-3 px-4 py-4 md:px-6 lg:flex-row lg:items-center lg:justify-between">
+    <main className="min-h-screen bg-[#f6f7f2] text-zinc-950">
+      <header className="top-0 z-30 border-b border-zinc-200/80 bg-[#f6f7f2]/95 backdrop-blur md:sticky">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-4 px-4 py-3 md:px-6 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-teal-700">
               Civic Radar
             </p>
-            <h1 className="text-2xl font-semibold tracking-normal text-zinc-950 md:text-3xl">
+            <h1 className="text-lg font-semibold tracking-normal text-zinc-950 sm:text-xl md:text-3xl">
               Live government map and docket monitor
             </h1>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
+          <div className="flex w-full flex-wrap items-center gap-2 lg:w-auto lg:justify-end">
+            <div className="inline-flex max-w-full rounded-lg border border-zinc-200/80 bg-white p-1 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
               {SCOPE_OPTIONS.map(({ id, label, Icon }) => (
                 <button
-                  className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition ${
+                  className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition sm:px-3 sm:py-2 sm:text-sm ${
                     scope === id
                       ? "bg-zinc-950 text-white"
                       : "text-zinc-600 hover:bg-zinc-100"
                   }`}
                   key={id}
                   onClick={() => setScope(id)}
+                  title={label}
                   type="button"
                 >
                   <Icon className="h-4 w-4" />
-                  {label}
+                  <span className="sr-only sm:not-sr-only">{label}</span>
                 </button>
               ))}
             </div>
 
             <button
-              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 shadow-sm hover:border-teal-500 hover:text-teal-700 disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-lg border border-zinc-200/80 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 shadow-[0_1px_2px_rgb(24_31_27/0.06)] hover:border-teal-500 hover:text-teal-700 disabled:cursor-wait disabled:opacity-60 sm:py-2"
               disabled={loading}
               onClick={refreshData}
+              title="Refresh"
               type="button"
             >
               <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
+              <span className="sr-only sm:not-sr-only">Refresh</span>
             </button>
+
+            <a
+              className="inline-flex items-center gap-2 rounded-lg bg-zinc-950 px-3 py-1.5 text-sm font-medium text-white shadow-[0_8px_20px_rgb(24_31_27/0.18)] hover:bg-zinc-800 sm:py-2"
+              href={myRadarHref}
+            >
+              <UserRound className="h-4 w-4" />
+              My Civic Radar
+            </a>
           </div>
         </div>
       </header>
 
       <div className="mx-auto max-w-[1600px] px-4 py-4 md:px-6">
-        <section className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-          <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm md:p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Federal feeds
-            </p>
-            <p className="mt-1 text-2xl font-semibold">{data?.stats.federalFeedsLive ?? 0}</p>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm md:p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Federal items
-            </p>
-            <p className="mt-1 text-2xl font-semibold">{data?.stats.federalItems ?? 0}</p>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm md:p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Local sources
-            </p>
-            <p className="mt-1 text-2xl font-semibold">
-              {data?.stats.municipalSourcesLive ?? 0}
-              <span className="text-base font-normal text-zinc-400">
-                /{data?.stats.municipalSources ?? 0}
-              </span>
-            </p>
-          </div>
-          <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm md:p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Local meetings
-            </p>
-            <p className="mt-1 text-2xl font-semibold">
-              {data?.stats.municipalMeetings ?? 0}
-            </p>
-          </div>
-          <div className="col-span-2 rounded-lg border border-zinc-200 bg-white p-3 shadow-sm md:col-span-1 md:p-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-              Next local
-            </p>
-            <p className="mt-1 text-xl font-semibold">
-              {data?.stats.nextLocalMeeting
+        <section className="grid grid-cols-2 gap-2.5 md:grid-cols-3 md:gap-3 xl:grid-cols-5">
+          <StatCard
+            Icon={Radio}
+            label="Federal feeds"
+            value={data?.stats.federalFeedsLive ?? 0}
+          />
+          <StatCard
+            Icon={FileText}
+            accent="text-sky-700"
+            label="Federal items"
+            value={data?.stats.federalItems ?? 0}
+          />
+          <StatCard
+            Icon={Building2}
+            accent="text-orange-700"
+            label="Local sources"
+            suffix={`/${data?.stats.municipalSources ?? 0}`}
+            value={data?.stats.municipalSourcesLive ?? 0}
+          />
+          <StatCard
+            Icon={CalendarDays}
+            accent="text-teal-700"
+            label="Local meetings"
+            value={data?.stats.municipalMeetings ?? 0}
+          />
+          <StatCard
+            Icon={Clock3}
+            accent="text-zinc-700"
+            className="col-span-2 md:col-span-1"
+            label="Next local"
+            value={
+              data?.stats.nextLocalMeeting
                 ? formatDate(data.stats.nextLocalMeeting)
-                : "No date"}
-            </p>
-          </div>
+                : "No date"
+            }
+          />
         </section>
 
         {error ? (
@@ -1018,8 +1065,8 @@ export default function CivicDashboard() {
           }`}
         >
           {showLocal ? (
-            <aside className="order-2 min-w-0 xl:order-none">
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
+            <aside className="order-1 min-w-0 xl:order-none">
+              <div className="rounded-lg border border-zinc-200/80 bg-white/95 p-3 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
                 <div className="flex items-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
                   <Search className="h-4 w-4 text-zinc-500" />
                   <input
@@ -1032,7 +1079,7 @@ export default function CivicDashboard() {
                 </div>
 
                 <button
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
                   onClick={locateUser}
                   type="button"
                 >
@@ -1047,7 +1094,7 @@ export default function CivicDashboard() {
                 </p>
               </div>
 
-              <div className="mt-3 grid max-h-[640px] gap-2 overflow-auto pr-1">
+              <div className="mt-3 grid max-h-[420px] gap-2 overflow-auto pr-1 md:max-h-[640px]">
                 {loading && !data ? (
                   Array.from({ length: 5 }).map((_, index) => (
                     <div
@@ -1073,8 +1120,8 @@ export default function CivicDashboard() {
           ) : null}
 
           {showLocal ? (
-            <section className="order-1 min-w-0 xl:order-none">
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
+            <section className="order-2 min-w-0 xl:order-none">
+              <div className="rounded-lg border border-zinc-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
                 <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="min-w-0">
                     <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -1091,7 +1138,7 @@ export default function CivicDashboard() {
                   </div>
                   {selectedSource ? (
                     <a
-                      className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:bg-white hover:text-teal-700"
                       href={selectedSource.sourceUrl}
                       rel="noreferrer"
                       target="_blank"
@@ -1142,7 +1189,7 @@ export default function CivicDashboard() {
 
           {showFederal ? (
             <aside className="order-3 min-w-0 xl:order-none">
-              <div className="rounded-lg border border-zinc-200 bg-white p-3 shadow-sm">
+              <div className="rounded-lg border border-zinc-200/80 bg-white p-4 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
@@ -1192,8 +1239,6 @@ export default function CivicDashboard() {
             </aside>
           ) : null}
         </section>
-
-        <CivicAgentConsole data={data} selectedSource={selectedSource} />
 
         <footer className="mt-6 flex flex-col gap-2 border-t border-zinc-200 py-5 text-xs text-zinc-500 md:flex-row md:items-center md:justify-between">
           <div className="flex flex-wrap gap-x-4 gap-y-1">

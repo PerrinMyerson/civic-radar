@@ -4,14 +4,19 @@ import {
   AlertCircle,
   Bell,
   Bot,
+  ChevronDown,
   CheckCircle2,
   LoaderCircle,
   Lock,
   Mail,
+  MapPin,
   MessageSquare,
   Plus,
+  RadioTower,
+  Settings2,
   ShieldCheck,
   Sparkles,
+  Target,
   Trash2,
   UserRound,
   Users,
@@ -124,7 +129,6 @@ type NotifyFrequency = "immediate" | "daily" | "weekly" | "off";
 type TopicType = "topic" | "bill_keyword" | "agency" | "committee" | "local_body";
 type AgentView = "alerts" | "agent" | "signals" | "public";
 type EventKind = "federal" | "local";
-type OnboardingStep = "welcome" | "regions" | "topics" | "alerts" | "context";
 type RelevanceFeedbackType =
   | "relevant"
   | "not_relevant"
@@ -260,15 +264,13 @@ const DEFAULT_TOPIC_FORM: Pick<CivicTopic, "topic_type" | "label" | "query"> = {
   query: "",
 };
 
+const DEFAULT_RADIUS_MILES = 75;
+const MIN_RADIUS_MILES = 1;
+const MAX_RADIUS_MILES = 500;
+const DEFAULT_PUBLIC_PULSE_MINIMUM = 5;
+const MIN_PUBLIC_PULSE_MINIMUM = 3;
+const MAX_PUBLIC_PULSE_MINIMUM = 100;
 const ONBOARDING_VERSION = "resident-burden-v1";
-
-const ONBOARDING_STEPS: Array<{ id: OnboardingStep; label: string }> = [
-  { id: "welcome", label: "Privacy" },
-  { id: "regions", label: "Regions" },
-  { id: "topics", label: "Topics" },
-  { id: "alerts", label: "Alerts" },
-  { id: "context", label: "Context" },
-];
 
 const RELEVANCE_FEEDBACK_OPTIONS: Array<{
   label: string;
@@ -356,6 +358,15 @@ function readSupabaseConfig(): SupabaseConfig | null {
     anonKey,
     url: url.replace(/\/$/, ""),
   };
+}
+
+function myCivicRadarRedirectUrl() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  const path = window.__CIVIC_DATA_URL__ ? "./my-civic-radar.html" : "/my-civic-radar";
+  return new URL(path, window.location.href).href;
 }
 
 function normalizeSession(payload: SupabaseSession): SupabaseSession {
@@ -483,6 +494,16 @@ function compactText(value: string, maxLength = 180) {
   }
 
   return `${compacted.slice(0, maxLength - 1).trim()}...`;
+}
+
+function integerInRange(value: string | number, min: number, max: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+
+  if (!Number.isInteger(parsed) || parsed < min || parsed > max) {
+    return null;
+  }
+
+  return parsed;
 }
 
 function normalizeSearch(value: string) {
@@ -882,12 +903,12 @@ function statusMessage(error: string, success: string) {
 }
 
 function FieldLabel({ children }: { children: ReactNode }) {
-  return <label className="text-xs font-medium uppercase tracking-wide text-zinc-500">{children}</label>;
+  return <span className="text-xs font-medium uppercase tracking-wide text-zinc-500">{children}</span>;
 }
 
 function Pill({ children }: { children: ReactNode }) {
   return (
-    <span className="inline-flex items-center rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-600 ring-1 ring-zinc-200">
+    <span className="inline-flex self-start rounded-full bg-zinc-100 px-2 py-1 text-[11px] font-medium text-zinc-600 ring-1 ring-zinc-200">
       {children}
     </span>
   );
@@ -902,9 +923,101 @@ function BurdenPill({ burden }: { burden: CivicBurdenResult }) {
         : "bg-emerald-50 text-emerald-700 ring-emerald-200";
 
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-1 text-[11px] font-medium ring-1 ${tone}`}>
+    <span className={`inline-flex self-start rounded-full px-2 py-1 text-[11px] font-medium ring-1 ${tone}`}>
       {burden.score}/100 {burden.label}
     </span>
+  );
+}
+
+function SignalMetric({
+  label,
+  value,
+}: {
+  label: string;
+  value: ReactNode;
+}) {
+  return (
+    <div className="rounded-lg border border-zinc-200/80 bg-white/80 px-3 py-2 shadow-[0_1px_2px_rgb(24_31_27/0.05)]">
+      <p className="text-lg font-semibold leading-none text-zinc-950">{value}</p>
+      <p className="mt-1 text-[11px] font-medium uppercase tracking-wide text-zinc-500">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function SetupTick({ done, label }: { done: boolean; label: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ring-1 ${
+        done
+          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+          : "bg-white text-zinc-600 ring-zinc-200"
+      }`}
+    >
+      {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <RadioTower className="h-3.5 w-3.5" />}
+      {label}
+    </span>
+  );
+}
+
+function QuickPickButton({
+  children,
+  disabled,
+  Icon = Plus,
+  onClick,
+  selected = false,
+}: {
+  children: ReactNode;
+  disabled?: boolean;
+  Icon?: typeof Plus;
+  onClick: () => void;
+  selected?: boolean;
+}) {
+  return (
+    <button
+      className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-700 shadow-[0_1px_2px_rgb(24_31_27/0.04)] transition hover:border-teal-400 hover:bg-teal-50 hover:text-teal-800 disabled:cursor-not-allowed ${
+        selected
+          ? "disabled:border-emerald-200 disabled:bg-emerald-50 disabled:text-emerald-700"
+          : "disabled:border-zinc-200 disabled:bg-zinc-100 disabled:text-zinc-400"
+      }`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+    >
+      {selected ? <CheckCircle2 className="h-4 w-4" /> : <Icon className="h-4 w-4" />}
+      {children}
+    </button>
+  );
+}
+
+function DisclosurePanel({
+  children,
+  Icon,
+  subtitle,
+  title,
+}: {
+  children: ReactNode;
+  Icon: typeof Bell;
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <details className="group rounded-lg border border-zinc-200/80 bg-white shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-teal-50 text-teal-700 ring-1 ring-teal-100">
+            <Icon className="h-4 w-4" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm font-semibold text-zinc-950">{title}</span>
+            <span className="block truncate text-xs text-zinc-500">{subtitle}</span>
+          </span>
+        </span>
+        <ChevronDown className="h-4 w-4 shrink-0 text-zinc-400 transition group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-zinc-100 px-4 py-3">{children}</div>
+    </details>
   );
 }
 
@@ -920,6 +1033,7 @@ export default function CivicAgentConsole({
   const [authPassword, setAuthPassword] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
+  const [authResolved, setAuthResolved] = useState(false);
   const [authSuccess, setAuthSuccess] = useState("");
   const [agentView, setAgentView] = useState<AgentView>("alerts");
 
@@ -943,7 +1057,7 @@ export default function CivicAgentConsole({
   });
   const [regionForm, setRegionForm] = useState({
     label: "",
-    radius_miles: 75,
+    radius_miles: String(DEFAULT_RADIUS_MILES),
   });
   const [topicForm, setTopicForm] = useState(DEFAULT_TOPIC_FORM);
   const [dataLoading, setDataLoading] = useState(false);
@@ -965,11 +1079,10 @@ export default function CivicAgentConsole({
     region_label: "",
     topic_query: "",
     question: "",
-    min_threshold: 5,
+    min_threshold: String(DEFAULT_PUBLIC_PULSE_MINIMUM),
   });
   const [candidateSummary, setCandidateSummary] = useState<CandidateTopicSummary | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
-  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep>("welcome");
   const [feedbackSaving, setFeedbackSaving] = useState("");
   const syncedMatchesRef = useRef("");
 
@@ -1000,6 +1113,7 @@ export default function CivicAgentConsole({
 
   const isConfigured = Boolean(supabase);
   const isSignedIn = Boolean(session?.access_token);
+  const isAuthChecking = !authResolved;
   const showOnboarding = Boolean(
     isSignedIn && profile && !profile.onboarding_completed_at && !onboardingDismissed,
   );
@@ -1007,6 +1121,97 @@ export default function CivicAgentConsole({
     typeof window !== "undefined" && window.__CIVIC_DATA_URL__
       ? "./methodology.html"
       : "/methodology";
+  const watchedRegionKeys = useMemo(
+    () => new Set(regions.map((region) => normalizeSearch(region.label))),
+    [regions],
+  );
+  const watchedTopicKeys = useMemo(
+    () =>
+      new Set(
+        topics.flatMap((topic) => [
+          normalizeSearch(topic.label),
+          normalizeSearch(topic.query),
+        ]),
+      ),
+    [topics],
+  );
+  const hasPrivateContext =
+    context.goals.length > 0 ||
+    context.concerns.length > 0 ||
+    Boolean(context.life_context) ||
+    Boolean(contextForm.goals.trim()) ||
+    Boolean(contextForm.concerns.trim()) ||
+    Boolean(contextForm.life_context.trim()) ||
+    Boolean(contextForm.policy_priorities.trim()) ||
+    contextForm.agent_consent ||
+    contextForm.candidate_agent_consent;
+  const setupTasks = [
+    { done: regions.length > 0, label: "Place", required: true },
+    { done: topics.length > 0, label: "Topics", required: true },
+    {
+      done: Boolean(profileForm.notification_email.trim()),
+      label: "Delivery",
+      required: true,
+    },
+    {
+      done: hasPrivateContext,
+      label: "Context",
+      required: false,
+    },
+  ];
+  const completedSetupTasks = setupTasks.filter((task) => task.done).length;
+  const setupCompletion = Math.round((completedSetupTasks / setupTasks.length) * 100);
+  const missingRequiredSetup = setupTasks
+    .filter((task) => task.required && !task.done)
+    .map((task) => task.label.toLowerCase());
+  const canCompleteOnboarding = missingRequiredSetup.length === 0;
+  const onboardingReadinessText = canCompleteOnboarding
+    ? "Ready to finish. Private context can still be added later."
+    : `Finish setup first: ${missingRequiredSetup.join(", ")}.`;
+  const regionSuggestions = useMemo(() => {
+    const suggestions = [
+      ...(selectedSource
+        ? [
+            {
+              id: selectedSource.id,
+              jurisdiction_kind: selectedSource.kind,
+              label: selectedSource.place,
+              lat: selectedSource.lat,
+              lng: selectedSource.lng,
+              source_id: selectedSource.id,
+            },
+          ]
+        : []),
+      ...(data?.municipalSources ?? []).map((source) => ({
+        id: source.id,
+        jurisdiction_kind: source.kind,
+        label: source.place || source.name,
+        lat: source.lat,
+        lng: source.lng,
+        source_id: source.id,
+      })),
+    ];
+    const seen = new Set<string>();
+
+    return suggestions
+      .filter((suggestion) => {
+        const key = normalizeSearch(suggestion.label);
+        if (!key || seen.has(key)) {
+          return false;
+        }
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 6);
+  }, [data?.municipalSources, selectedSource]);
+  const topicSuggestions = useMemo(
+    () =>
+      POLICY_DOMAINS.map((domain) => ({
+        label: domain.label.replace(/^\w/, (letter) => letter.toUpperCase()),
+        query: domain.terms[0] ?? domain.label,
+      })).slice(0, 6),
+    [],
+  );
 
   useEffect(() => {
     const configTimer = window.setTimeout(() => {
@@ -1109,18 +1314,31 @@ export default function CivicAgentConsole({
   }, [session?.access_token, session?.user.email, session?.user.id, supabase]);
 
   useEffect(() => {
-    if (!supabase) {
+    if (!configResolved) {
       return;
     }
 
-    const stored = readStoredSession();
-    if (!stored?.access_token) {
-      return;
+    if (!supabase) {
+      const authTimer = window.setTimeout(() => {
+        setAuthResolved(true);
+      }, 0);
+
+      return () => window.clearTimeout(authTimer);
     }
 
     let mounted = true;
 
     async function restoreSession() {
+      setAuthResolved(false);
+
+      const stored = readStoredSession();
+      if (!stored?.access_token) {
+        if (mounted) {
+          setAuthResolved(true);
+        }
+        return;
+      }
+
       try {
         const user = await supabaseRequest<SupabaseUser>(supabase, "/auth/v1/user", {
           token: stored.access_token,
@@ -1150,6 +1368,10 @@ export default function CivicAgentConsole({
         } catch {
           saveSession(null);
         }
+      } finally {
+        if (mounted) {
+          setAuthResolved(true);
+        }
       }
     }
 
@@ -1158,7 +1380,7 @@ export default function CivicAgentConsole({
     return () => {
       mounted = false;
     };
-  }, [setAndSaveSession, supabase]);
+  }, [configResolved, setAndSaveSession, supabase]);
 
   useEffect(() => {
     if (session?.access_token) {
@@ -1300,8 +1522,13 @@ export default function CivicAgentConsole({
     setAuthSuccess("");
 
     try {
+      const redirectUrl = myCivicRadarRedirectUrl();
       const path =
-        authMode === "signup" ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password";
+        authMode === "signup"
+          ? `/auth/v1/signup${
+              redirectUrl ? `?redirect_to=${encodeURIComponent(redirectUrl)}` : ""
+            }`
+          : "/auth/v1/token?grant_type=password";
       const payload = await supabaseRequest<Partial<SupabaseSession> & { user?: SupabaseUser }>(
         supabase,
         path,
@@ -1317,7 +1544,6 @@ export default function CivicAgentConsole({
       if (payload.access_token && payload.user) {
         setAndSaveSession(normalizeSession(payload as SupabaseSession));
         setOnboardingDismissed(false);
-        setOnboardingStep("welcome");
         setAuthSuccess("Signed in");
         return;
       }
@@ -1344,7 +1570,6 @@ export default function CivicAgentConsole({
     setTopics([]);
     setContext(DEFAULT_CONTEXT);
     setOnboardingDismissed(false);
-    setOnboardingStep("welcome");
   }
 
   async function saveProfile() {
@@ -1383,6 +1608,18 @@ export default function CivicAgentConsole({
     }
   }
 
+  function buildContextPayload(userId: string) {
+    return {
+      user_id: userId,
+      goals: splitLines(contextForm.goals),
+      concerns: splitLines(contextForm.concerns),
+      life_context: contextForm.life_context.trim(),
+      policy_priorities: priorityTextToJson(contextForm.policy_priorities),
+      agent_consent: contextForm.agent_consent,
+      candidate_agent_consent: contextForm.candidate_agent_consent,
+    };
+  }
+
   async function saveContext() {
     if (!supabase || !session?.access_token || !session.user.id) {
       return false;
@@ -1397,15 +1634,7 @@ export default function CivicAgentConsole({
         supabase,
         "/rest/v1/civic_private_context?on_conflict=user_id&select=*",
         {
-          body: {
-            user_id: session.user.id,
-            goals: splitLines(contextForm.goals),
-            concerns: splitLines(contextForm.concerns),
-            life_context: contextForm.life_context.trim(),
-            policy_priorities: priorityTextToJson(contextForm.policy_priorities),
-            agent_consent: contextForm.agent_consent,
-            candidate_agent_consent: contextForm.candidate_agent_consent,
-          },
+          body: buildContextPayload(session.user.id),
           headers: {
             Prefer: "resolution=merge-duplicates,return=representation",
           },
@@ -1442,6 +1671,23 @@ export default function CivicAgentConsole({
       return;
     }
 
+    if (watchedRegionKeys.has(normalizeSearch(label))) {
+      setDataError(`${label} is already on your watchlist`);
+      return;
+    }
+
+    const radiusMiles = integerInRange(
+      regionForm.radius_miles,
+      MIN_RADIUS_MILES,
+      MAX_RADIUS_MILES,
+    );
+    if (radiusMiles === null) {
+      setDataError(
+        `Radius must be a whole number from ${MIN_RADIUS_MILES} to ${MAX_RADIUS_MILES} miles`,
+      );
+      return;
+    }
+
     setDataLoading(true);
     setDataError("");
     setDataSuccess("");
@@ -1458,7 +1704,7 @@ export default function CivicAgentConsole({
             jurisdiction_kind: region?.jurisdiction_kind ?? null,
             lat: region?.lat ?? null,
             lng: region?.lng ?? null,
-            radius_miles: regionForm.radius_miles,
+            radius_miles: radiusMiles,
           },
           headers: {
             Prefer: "return=representation",
@@ -1477,7 +1723,7 @@ export default function CivicAgentConsole({
               home_region: label,
             },
       );
-      setRegionForm({ label: "", radius_miles: 75 });
+      setRegionForm({ label: "", radius_miles: String(DEFAULT_RADIUS_MILES) });
       setDataSuccess("Region added");
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to add region");
@@ -1495,6 +1741,14 @@ export default function CivicAgentConsole({
     const query = (topic?.query ?? topicForm.query).trim() || label;
     if (!label || !query) {
       setDataError("Topic label and query are required");
+      return;
+    }
+
+    if (
+      watchedTopicKeys.has(normalizeSearch(label)) ||
+      watchedTopicKeys.has(normalizeSearch(query))
+    ) {
+      setDataError(`${label} is already on your watchlist`);
       return;
     }
 
@@ -1533,6 +1787,16 @@ export default function CivicAgentConsole({
     }
   }
 
+  function handleRegionSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void addRegion();
+  }
+
+  function handleTopicSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void addTopic();
+  }
+
   async function deleteRow(table: "civic_user_regions" | "civic_user_topics", id: string) {
     if (!supabase || !session?.access_token) {
       return;
@@ -1567,12 +1831,32 @@ export default function CivicAgentConsole({
       return;
     }
 
+    if (!canCompleteOnboarding) {
+      setDataError(onboardingReadinessText);
+      setDataSuccess("");
+      return;
+    }
+
     setDataLoading(true);
     setDataError("");
     setDataSuccess("");
 
     try {
       const completedAt = new Date().toISOString();
+      const contextRows = hasPrivateContext
+        ? await supabaseRequest<CivicPrivateContext[]>(
+            supabase,
+            "/rest/v1/civic_private_context?on_conflict=user_id&select=*",
+            {
+              body: buildContextPayload(session.user.id),
+              headers: {
+                Prefer: "resolution=merge-duplicates,return=representation",
+              },
+              method: "POST",
+              token: session.access_token,
+            },
+          )
+        : [];
       const rows = await supabaseRequest<CivicProfile[]>(
         supabase,
         "/rest/v1/civic_profiles?on_conflict=user_id&select=*",
@@ -1592,6 +1876,9 @@ export default function CivicAgentConsole({
         },
       );
 
+      if (contextRows[0]) {
+        setContext(contextRows[0]);
+      }
       setProfile(rows[0] ?? {
         user_id: session.user.id,
         email: session.user.email ?? authEmail.trim(),
@@ -1870,6 +2157,19 @@ export default function CivicAgentConsole({
       return;
     }
 
+    const minThreshold = integerInRange(
+      candidateForm.min_threshold,
+      MIN_PUBLIC_PULSE_MINIMUM,
+      MAX_PUBLIC_PULSE_MINIMUM,
+    );
+    if (minThreshold === null) {
+      setDataError(
+        `Minimum responses must be a whole number from ${MIN_PUBLIC_PULSE_MINIMUM} to ${MAX_PUBLIC_PULSE_MINIMUM}`,
+      );
+      setDataSuccess("");
+      return;
+    }
+
     setDataLoading(true);
     setDataError("");
     setDataSuccess("");
@@ -1884,7 +2184,7 @@ export default function CivicAgentConsole({
             body: {
               p_region: candidateForm.region_label.trim(),
               p_topic: candidateForm.topic_query.trim(),
-              p_min_count: candidateForm.min_threshold,
+              p_min_count: minThreshold,
             },
             method: "POST",
             token: session?.access_token,
@@ -1898,7 +2198,7 @@ export default function CivicAgentConsole({
             body: {
               p_region: candidateForm.region_label.trim(),
               p_topic: candidateForm.topic_query.trim(),
-              p_min_count: candidateForm.min_threshold,
+              p_min_count: minThreshold,
             },
             method: "POST",
             token: session?.access_token,
@@ -1916,7 +2216,7 @@ export default function CivicAgentConsole({
             region_label: candidateForm.region_label.trim(),
             topic_query: candidateForm.topic_query.trim(),
             question: candidateForm.question.trim() || "Aggregate civic signal request",
-            min_threshold: candidateForm.min_threshold,
+            min_threshold: minThreshold,
             response: summary,
             status: summary?.threshold_met ? "answered" : "threshold_not_met",
           },
@@ -1933,6 +2233,8 @@ export default function CivicAgentConsole({
     }
   }
 
+  const hasMatchedAlerts = matchedEvents.length > 0;
+  const alertEvents = hasMatchedAlerts ? matchedEvents : civicEvents.slice(0, 8);
   const activeEventKey = activeEvent?.id ?? "";
 
   useEffect(() => {
@@ -1952,10 +2254,6 @@ export default function CivicAgentConsole({
     return () => window.clearTimeout(resetTimer);
   }, [activeEventKey]);
 
-  const onboardingStepIndex = Math.max(
-    0,
-    ONBOARDING_STEPS.findIndex((step) => step.id === onboardingStep),
-  );
   const onboardingPreviewEvents =
     matchedEvents.length > 0 ? matchedEvents.slice(0, 3) : civicEvents.slice(0, 3);
 
@@ -1985,25 +2283,117 @@ export default function CivicAgentConsole({
     );
   }
 
+  const authForm = (
+    <form className="grid gap-3" onSubmit={handleAuthSubmit}>
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-teal-700">
+          My Civic Radar account
+        </p>
+        <h3 className="mt-1 text-xl font-semibold text-zinc-950">
+          Sign in or create an account
+        </h3>
+        <p className="mt-2 text-sm leading-6 text-zinc-600">
+          Save regions, topics, private context, and civic feedback without locking the
+          public radar behind a login.
+        </p>
+      </div>
+      <div className="inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-1">
+        {[
+          ["signin", "Sign in"],
+          ["signup", "Create account"],
+        ].map(([mode, label]) => (
+          <button
+            className={`flex-1 rounded-md px-3 py-1.5 text-sm font-medium ${
+              authMode === mode
+                ? "bg-zinc-950 text-white"
+                : "text-zinc-600 hover:bg-white"
+            }`}
+            key={mode}
+            onClick={() => setAuthMode(mode as "signin" | "signup")}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <label className="grid gap-1">
+        <FieldLabel>Email</FieldLabel>
+        <input
+          autoComplete="email"
+          className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+          onChange={(event) => setAuthEmail(event.target.value)}
+          required
+          type="email"
+          value={authEmail}
+        />
+      </label>
+      <label className="grid gap-1">
+        <FieldLabel>Password</FieldLabel>
+        <input
+          autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+          className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+          minLength={6}
+          onChange={(event) => setAuthPassword(event.target.value)}
+          required
+          type="password"
+          value={authPassword}
+        />
+      </label>
+      <button
+        className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
+        disabled={authLoading}
+        type="submit"
+      >
+        {authLoading ? (
+          <LoaderCircle className="h-4 w-4 animate-spin" />
+        ) : (
+          <UserRound className="h-4 w-4" />
+        )}
+        Continue
+      </button>
+      {statusMessage(authError, authSuccess)}
+    </form>
+  );
+
   return (
-    <section className="mt-4 rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-teal-700">
-            My Civic Radar
-          </p>
-          <h2 className="mt-1 text-xl font-semibold text-zinc-950">
-            Resident-first alerts, civic briefs, and public signals
-          </h2>
+    <section className="relative z-10 mt-4 overflow-hidden rounded-lg border border-zinc-200/80 bg-white/88 shadow-[0_22px_70px_rgb(24_31_27/0.10)] backdrop-blur">
+      <div className="relative border-b border-zinc-200/80 bg-white/70 px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <div className="max-w-3xl">
+            <p className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-teal-700">
+              <RadioTower className="h-3.5 w-3.5" />
+              My Civic Radar
+            </p>
+            <h2 className="mt-2 text-2xl font-semibold tracking-normal text-zinc-950 md:text-4xl">
+              Civic signal inbox
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600 md:text-base">
+              Watch places and topics, then turn matching public items into briefs,
+              feedback, and saved alerts.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:min-w-[520px]">
+            <SignalMetric label="Matches" value={matchedEvents.length} />
+            <SignalMetric label="Places" value={regions.length} />
+            <SignalMetric label="Topics" value={topics.length} />
+            <SignalMetric
+              label="Signal"
+              value={
+                isAuthChecking ? "Checking" : isSignedIn ? `${setupCompletion}%` : "Public"
+              }
+            />
+          </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <Pill>{matchedEvents.length} alert matches</Pill>
-          <Pill>{regions.length} regions</Pill>
-          <Pill>{topics.length} topics</Pill>
-          <Pill>{isSignedIn ? "Account active" : "Public mode"}</Pill>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap gap-2">
+            {setupTasks.map((task) => (
+              <SetupTick done={task.done} key={task.label} label={task.label} />
+            ))}
+          </div>
           <a
-            className="inline-flex items-center rounded-full bg-white px-2 py-1 text-[11px] font-medium text-teal-700 ring-1 ring-teal-200 hover:bg-teal-50"
+            className="inline-flex items-center rounded-full bg-white px-3 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-teal-200 transition hover:bg-teal-50"
             href={methodologyHref}
             rel="noreferrer"
             target="_blank"
@@ -2013,6 +2403,8 @@ export default function CivicAgentConsole({
         </div>
       </div>
 
+      <div className="px-4 pb-5 pt-4 sm:px-5">
+
       {configResolved && !isConfigured ? (
         <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           Supabase public config is missing. Set NEXT_PUBLIC_SUPABASE_URL and
@@ -2021,482 +2413,258 @@ export default function CivicAgentConsole({
         </div>
       ) : null}
 
-      {isConfigured && !isSignedIn ? (
-        <form
-          className="mt-4 grid gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3 lg:grid-cols-[1fr_1fr_auto_auto]"
-          onSubmit={handleAuthSubmit}
+      {isAuthChecking ? (
+        <div className="mt-4 flex min-h-[420px] items-center justify-center rounded-lg border border-zinc-200/80 bg-zinc-50 p-6">
+          <div className="flex flex-col items-center gap-3 text-center">
+            <LoaderCircle className="h-7 w-7 animate-spin text-teal-700" />
+            <div>
+              <p className="text-sm font-semibold text-zinc-950">Checking account</p>
+              <p className="mt-1 text-sm text-zinc-500">
+                Loading your Civic Radar session.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : !isSignedIn ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none mt-4 rounded-lg border border-zinc-200/80 bg-[#f8faf7] p-4"
         >
-          <div className="grid gap-1">
-            <FieldLabel>Email</FieldLabel>
-            <input
-              autoComplete="email"
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-              onChange={(event) => setAuthEmail(event.target.value)}
-              required
-              type="email"
-              value={authEmail}
-            />
-          </div>
-          <div className="grid gap-1">
-            <FieldLabel>Password</FieldLabel>
-            <input
-              autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-              minLength={6}
-              onChange={(event) => setAuthPassword(event.target.value)}
-              required
-              type="password"
-              value={authPassword}
-            />
-          </div>
-          <div className="grid gap-1">
-            <FieldLabel>Mode</FieldLabel>
-            <select
-              className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-              onChange={(event) => setAuthMode(event.target.value as "signin" | "signup")}
-              value={authMode}
-            >
-              <option value="signin">Sign in</option>
-              <option value="signup">Create account</option>
-            </select>
-          </div>
-          <button
-            className="mt-5 inline-flex items-center justify-center gap-2 rounded-md bg-zinc-950 px-4 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
-            disabled={authLoading}
-            type="submit"
-          >
-            {authLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <UserRound className="h-4 w-4" />}
-            Continue
-          </button>
-          <div className="lg:col-span-4">{statusMessage(authError, authSuccess)}</div>
-        </form>
+            <div className="grid gap-4 lg:grid-cols-[0.82fr_1.18fr]">
+              <div>
+                <FieldLabel>Account workspace preview</FieldLabel>
+                <h3 className="mt-1 text-lg font-semibold text-zinc-950">
+                  Personal alerts without making the public radar private
+                </h3>
+                <div className="mt-3 grid gap-2">
+                  {[
+                    {
+                      Icon: Bell,
+                      label: "Watchlists",
+                      text: "Save regions, jurisdictions, agencies, committees, and topics.",
+                    },
+                    {
+                      Icon: Bot,
+                      label: "Evidence-bound briefs",
+                      text: "Connect matched items to your stated goals with source links.",
+                    },
+                    {
+                      Icon: ShieldCheck,
+                      label: "Private context",
+                      text: "Keep goals and concerns account-scoped and protected by RLS.",
+                    },
+                    {
+                      Icon: Vote,
+                      label: "Civic feedback",
+                      text: "Log relevance, affectedness, intensity, and desired outcomes.",
+                    },
+                  ].map(({ Icon, label, text }) => (
+                    <div
+                      className="rounded-lg border border-zinc-200/80 bg-white p-3 shadow-[0_1px_2px_rgb(24_31_27/0.05)]"
+                      key={label}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Icon className="h-4 w-4 text-teal-700" />
+                        <p className="text-sm font-semibold text-zinc-950">{label}</p>
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-zinc-500">{text}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <FieldLabel>Sample civic items</FieldLabel>
+                <div className="mt-3 grid gap-2">
+                  {onboardingPreviewEvents.map((event) => (
+                    <article
+                      className="rounded-lg border border-zinc-200/80 bg-white p-3 shadow-[0_1px_2px_rgb(24_31_27/0.05)]"
+                      key={`${event.eventKind}:${event.id}:signed-out-preview`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
+                            {event.eventKind} · {event.sourceName}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-sm font-semibold leading-5 text-zinc-950">
+                            {event.title}
+                          </p>
+                        </div>
+                        <BurdenPill burden={event.burden} />
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-zinc-500">
+                        Burden: {event.burden.reasons.join("; ")}
+                      </p>
+                    </article>
+                  ))}
+                  {onboardingPreviewEvents.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500">
+                      Civic items will appear here after the feed loads.
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+        </div>
       ) : null}
 
       {showOnboarding ? (
-        <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50/60 p-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <FieldLabel>Account setup</FieldLabel>
-              <h3 className="mt-1 text-lg font-semibold text-zinc-950">
-                Tune Civic Radar for your region and topics
-              </h3>
+        <div className="mt-4 rounded-lg border border-teal-200/80 bg-[#eefdfa]/90 px-3 py-2.5 shadow-[0_1px_2px_rgb(24_31_27/0.05)]">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-zinc-950">
+                Signal setup is {setupCompletion}% complete.
+              </p>
+              <p className="text-xs text-zinc-600">
+                Add a place, a topic, and delivery email before finishing setup.
+              </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
-                className="rounded-md border border-teal-200 bg-white px-3 py-2 text-sm font-medium text-teal-700 hover:bg-teal-50"
+                className="rounded-md border border-teal-200 bg-white px-3 py-1.5 text-sm font-medium text-teal-700 hover:bg-teal-50"
                 onClick={() => setOnboardingDismissed(true)}
                 type="button"
               >
-                Skip for now
+                Hide
               </button>
               <button
-                className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
-                disabled={dataLoading}
+                className="rounded-md bg-zinc-950 px-3 py-1.5 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={dataLoading || !canCompleteOnboarding}
                 onClick={() => void completeOnboarding()}
+                title={!canCompleteOnboarding ? onboardingReadinessText : undefined}
                 type="button"
               >
                 Finish setup
               </button>
             </div>
           </div>
-
-          <div className="mt-3 grid gap-2 sm:grid-cols-5">
-            {ONBOARDING_STEPS.map((step, index) => (
-              <button
-                className={`rounded-md px-2 py-2 text-xs font-medium ${
-                  onboardingStep === step.id
-                    ? "bg-zinc-950 text-white"
-                    : index < onboardingStepIndex
-                      ? "bg-white text-teal-700 ring-1 ring-teal-200"
-                      : "bg-white text-zinc-600 ring-1 ring-zinc-200"
-                }`}
-                key={step.id}
-                onClick={() => setOnboardingStep(step.id)}
-                type="button"
-              >
-                {step.label}
-              </button>
-            ))}
-          </div>
-
-          {onboardingStep === "welcome" ? (
-            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <div className="rounded-lg bg-white p-3 text-sm leading-6 text-zinc-700 ring-1 ring-teal-100">
-                Watchlists, notification settings, and optional private context are saved to
-                your account. Public radar browsing still works without this setup.
-              </div>
-              <div className="grid gap-2">
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      display_name: event.target.value,
-                    }))
-                  }
-                  placeholder="Display name"
-                  value={profileForm.display_name}
-                />
-                <select
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      notify_frequency: event.target.value as NotifyFrequency,
-                    }))
-                  }
-                  value={profileForm.notify_frequency}
-                >
-                  <option value="immediate">Immediate alerts</option>
-                  <option value="daily">Daily digest</option>
-                  <option value="weekly">Weekly digest</option>
-                  <option value="off">Off</option>
-                </select>
-              </div>
-              <button
-                className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
-                onClick={() => setOnboardingStep("regions")}
-                type="button"
-              >
-                Continue
-              </button>
-            </div>
-          ) : null}
-
-          {onboardingStep === "regions" ? (
-            <div className="mt-3 grid gap-3">
-              <div className="grid gap-2 md:grid-cols-[1fr_120px_auto_auto]">
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setRegionForm((current) => ({ ...current, label: event.target.value }))
-                  }
-                  placeholder="Home region or public body"
-                  value={regionForm.label}
-                />
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  min={1}
-                  onChange={(event) =>
-                    setRegionForm((current) => ({
-                      ...current,
-                      radius_miles: Number(event.target.value),
-                    }))
-                  }
-                  type="number"
-                  value={regionForm.radius_miles}
-                />
-                <button
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
-                  onClick={() => void addRegion()}
-                  type="button"
-                >
-                  Add region
-                </button>
-                {selectedSource ? (
-                  <button
-                    className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
-                    onClick={() =>
-                      void addRegion({
-                        label: selectedSource.place,
-                        source_id: selectedSource.id,
-                        jurisdiction_kind: selectedSource.kind,
-                        lat: selectedSource.lat,
-                        lng: selectedSource.lng,
-                      })
-                    }
-                    type="button"
-                  >
-                    Watch selected
-                  </button>
-                ) : null}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {regions.map((region) => (
-                  <Pill key={region.id}>{region.label}</Pill>
-                ))}
-              </div>
-              <div className="flex justify-end">
-                <button
-                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
-                  onClick={() => setOnboardingStep("topics")}
-                  type="button"
-                >
-                  Continue
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {onboardingStep === "topics" ? (
-            <div className="mt-3 grid gap-3">
-              <div className="flex flex-wrap gap-2">
-                {POLICY_DOMAINS.map((domain) => (
-                  <button
-                    className="rounded-full bg-white px-3 py-1.5 text-xs font-medium text-teal-700 ring-1 ring-teal-200 hover:bg-teal-50"
-                    key={domain.label}
-                    onClick={() =>
-                      void addTopic({
-                        label: domain.label,
-                        query: domain.terms.join(" "),
-                        topic_type: "topic",
-                      })
-                    }
-                    type="button"
-                  >
-                    {domain.label}
-                  </button>
-                ))}
-              </div>
-              <div className="grid gap-2 md:grid-cols-[140px_1fr_1fr_auto]">
-                <select
-                  className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setTopicForm((current) => ({
-                      ...current,
-                      topic_type: event.target.value as TopicType,
-                    }))
-                  }
-                  value={topicForm.topic_type}
-                >
-                  <option value="topic">Topic</option>
-                  <option value="bill_keyword">Bill keyword</option>
-                  <option value="agency">Agency</option>
-                  <option value="committee">Committee</option>
-                  <option value="local_body">Local body</option>
-                </select>
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setTopicForm((current) => ({ ...current, label: event.target.value }))
-                  }
-                  placeholder="Label"
-                  value={topicForm.label}
-                />
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setTopicForm((current) => ({ ...current, query: event.target.value }))
-                  }
-                  placeholder="Match text"
-                  value={topicForm.query}
-                />
-                <button
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
-                  onClick={() => void addTopic()}
-                  type="button"
-                >
-                  Add topic
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {topics.map((topic) => (
-                  <Pill key={topic.id}>{topic.label}</Pill>
-                ))}
-              </div>
-              <div className="flex justify-end">
-                <button
-                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
-                  onClick={() => {
-                    void syncAlertMatches(true);
-                    setOnboardingStep("alerts");
-                  }}
-                  type="button"
-                >
-                  Show matches
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {onboardingStep === "alerts" ? (
-            <div className="mt-3 grid gap-2">
-              {onboardingPreviewEvents.map((event) => (
-                <article
-                  className="rounded-lg border border-zinc-200 bg-white p-3"
-                  key={`${event.eventKind}:${event.id}:onboarding`}
-                >
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <p className="text-xs font-medium uppercase tracking-wide text-zinc-500">
-                        {event.eventKind} · {event.sourceName}
-                      </p>
-                      <p className="mt-1 text-sm font-semibold leading-5 text-zinc-950">
-                        {event.title}
-                      </p>
-                    </div>
-                    <BurdenPill burden={event.burden} />
-                  </div>
-                  {"relevanceReasons" in event &&
-                  (event as MatchedEvent).relevanceReasons.length > 0 ? (
-                    <p className="mt-2 text-xs leading-5 text-zinc-500">
-                      Why: {(event as MatchedEvent).relevanceReasons.join("; ")}
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs leading-5 text-zinc-500">
-                      Add a region and topic to create stronger personal matches.
-                    </p>
-                  )}
-                  {renderFeedbackButtons(event)}
-                </article>
-              ))}
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
-                  onClick={() => void completeOnboarding()}
-                  type="button"
-                >
-                  Finish without context
-                </button>
-                <button
-                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
-                  onClick={() => setOnboardingStep("context")}
-                  type="button"
-                >
-                  Add context
-                </button>
-              </div>
-            </div>
-          ) : null}
-
-          {onboardingStep === "context" ? (
-            <div className="mt-3 grid gap-2">
-              <div className="grid gap-2 md:grid-cols-2">
-                <textarea
-                  className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setContextForm((current) => ({ ...current, goals: event.target.value }))
-                  }
-                  placeholder="Goals, one per line"
-                  value={contextForm.goals}
-                />
-                <textarea
-                  className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setContextForm((current) => ({
-                      ...current,
-                      concerns: event.target.value,
-                    }))
-                  }
-                  placeholder="Concerns, one per line"
-                  value={contextForm.concerns}
-                />
-              </div>
-              <textarea
-                className="min-h-20 rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                onChange={(event) =>
-                  setContextForm((current) => ({
-                    ...current,
-                    life_context: event.target.value,
-                  }))
-                }
-                placeholder="Optional private life context"
-                value={contextForm.life_context}
-              />
-              <div className="flex flex-wrap justify-end gap-2">
-                <button
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
-                  onClick={() => void completeOnboarding()}
-                  type="button"
-                >
-                  Skip context
-                </button>
-                <button
-                  className="rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white"
-                  onClick={() => {
-                    void (async () => {
-                      const saved = await saveContext();
-                      if (saved) {
-                        await completeOnboarding();
-                      }
-                    })();
-                  }}
-                  type="button"
-                >
-                  Save and finish
-                </button>
-              </div>
-            </div>
-          ) : null}
-
+          <p
+            className={`mt-2 text-xs ${
+              canCompleteOnboarding ? "text-teal-800" : "text-amber-800"
+            }`}
+          >
+            {onboardingReadinessText}
+          </p>
           {statusMessage(dataError, dataSuccess)}
         </div>
       ) : null}
 
       {isSignedIn ? (
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(280px,0.85fr)_minmax(0,1.15fr)]">
-          <div className="grid gap-4">
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-              <div className="flex items-center justify-between gap-3">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <aside className="order-2 grid gap-3 self-start xl:sticky xl:top-24 xl:order-2">
+            <div className="overflow-hidden rounded-lg border border-teal-900/20 bg-[#0d2824] p-4 text-white shadow-[0_18px_45px_rgb(13_40_36/0.24)]">
+              <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-zinc-950">
+                  <p className="text-xs font-medium uppercase tracking-wide text-teal-100">
+                    Signal strength
+                  </p>
+                  <p className="mt-1 text-3xl font-semibold">{setupCompletion}%</p>
+                </div>
+                <RadioTower className="h-6 w-6 text-teal-200" />
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/15">
+                <div
+                  className="h-full rounded-full bg-teal-200 transition-all"
+                  style={{ width: `${setupCompletion}%` }}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {setupTasks.map((task) => (
+                  <span
+                    className={`rounded-full px-2 py-1 text-[11px] font-medium ${
+                      task.done ? "bg-white text-zinc-950" : "bg-white/10 text-teal-50"
+                    }`}
+                    key={`side-${task.label}`}
+                  >
+                    {task.label}
+                  </span>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center justify-between gap-3 border-t border-white/10 pt-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold">
                     {profile?.display_name || session?.user.email || "Civic account"}
                   </p>
-                  <p className="mt-0.5 text-xs text-zinc-500">
-                    Private data is protected by Supabase RLS
-                  </p>
+                  <p className="text-xs text-teal-100">Private account workspace</p>
                 </div>
                 <button
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 hover:border-teal-500 hover:text-teal-700"
+                  className="shrink-0 rounded-md border border-white/15 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-white/10"
                   onClick={handleSignOut}
                   type="button"
                 >
                   Sign out
                 </button>
               </div>
+            </div>
 
-              <div className="mt-3 grid gap-2">
-                <FieldLabel>Profile</FieldLabel>
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      display_name: event.target.value,
-                    }))
-                  }
-                  placeholder="Name"
-                  value={profileForm.display_name}
-                />
-                <input
-                  className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setProfileForm((current) => ({
-                      ...current,
-                      home_region: event.target.value,
-                    }))
-                  }
-                  placeholder="Home region"
-                  value={profileForm.home_region}
-                />
-                <div className="grid grid-cols-[1fr_auto] gap-2">
+            <DisclosurePanel
+              Icon={Settings2}
+              subtitle={`${profileForm.notify_frequency} delivery`}
+              title="Account"
+            >
+              <div className="grid gap-2">
+                <label className="grid gap-1">
+                  <FieldLabel>Name</FieldLabel>
                   <input
                     className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
                     onChange={(event) =>
                       setProfileForm((current) => ({
                         ...current,
-                        notification_email: event.target.value,
+                        display_name: event.target.value,
                       }))
                     }
-                    placeholder="Notification email"
-                    type="email"
-                    value={profileForm.notification_email}
+                    placeholder="Name"
+                    value={profileForm.display_name}
                   />
-                  <select
-                    className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500"
+                </label>
+                <label className="grid gap-1">
+                  <FieldLabel>Home region</FieldLabel>
+                  <input
+                    className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
                     onChange={(event) =>
                       setProfileForm((current) => ({
                         ...current,
-                        notify_frequency: event.target.value as NotifyFrequency,
+                        home_region: event.target.value,
                       }))
                     }
-                    value={profileForm.notify_frequency}
-                  >
-                    <option value="immediate">Immediate</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                    <option value="off">Off</option>
-                  </select>
+                    placeholder="Home region"
+                    value={profileForm.home_region}
+                  />
+                </label>
+                <div className="grid gap-2 sm:grid-cols-[1fr_120px] xl:grid-cols-1">
+                  <label className="grid gap-1">
+                    <FieldLabel>Notification email</FieldLabel>
+                    <input
+                      className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-teal-500"
+                      onChange={(event) =>
+                        setProfileForm((current) => ({
+                          ...current,
+                          notification_email: event.target.value,
+                        }))
+                      }
+                      placeholder="Notification email"
+                      type="email"
+                      value={profileForm.notification_email}
+                    />
+                  </label>
+                  <label className="grid gap-1">
+                    <FieldLabel>Delivery</FieldLabel>
+                    <select
+                      className="rounded-md border border-zinc-200 bg-white px-2 py-2 text-sm outline-none focus:border-teal-500"
+                      onChange={(event) =>
+                        setProfileForm((current) => ({
+                          ...current,
+                          notify_frequency: event.target.value as NotifyFrequency,
+                        }))
+                      }
+                      value={profileForm.notify_frequency}
+                    >
+                      <option value="immediate">Immediate</option>
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="off">Off</option>
+                    </select>
+                  </label>
                 </div>
                 <button
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-zinc-950 px-3 py-2 text-sm font-medium text-white disabled:cursor-wait disabled:opacity-60"
@@ -2504,143 +2672,221 @@ export default function CivicAgentConsole({
                   onClick={saveProfile}
                   type="button"
                 >
-                  {dataLoading ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                  Save profile
+                  {dataLoading ? (
+                    <LoaderCircle className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Mail className="h-4 w-4" />
+                  )}
+                  Save account
                 </button>
               </div>
-            </div>
+            </DisclosurePanel>
 
-            <div className="rounded-lg border border-zinc-200 p-3">
-              <div className="flex items-center justify-between">
-                <FieldLabel>Watchlist</FieldLabel>
-                {selectedSource ? (
-                  <button
-                    className="inline-flex items-center gap-1 rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-600 hover:border-teal-500 hover:text-teal-700"
-                    onClick={() =>
-                      void addRegion({
-                        label: selectedSource.place,
-                        source_id: selectedSource.id,
-                        jurisdiction_kind: selectedSource.kind,
-                        lat: selectedSource.lat,
-                        lng: selectedSource.lng,
-                      })
-                    }
-                    type="button"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    Watch selected
-                  </button>
-                ) : null}
-              </div>
+            <DisclosurePanel
+              Icon={Target}
+              subtitle={`${regions.length} places, ${topics.length} topics`}
+              title="Watchlist"
+            >
+              <div className="grid gap-3">
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    Quick places
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {regionSuggestions.slice(0, 3).map((suggestion) => {
+                      const watched = watchedRegionKeys.has(normalizeSearch(suggestion.label));
 
-              <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_96px_auto]">
-                <input
-                  className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setRegionForm((current) => ({ ...current, label: event.target.value }))
-                  }
-                  placeholder="Region or jurisdiction"
-                  value={regionForm.label}
-                />
-                <input
-                  className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  min={1}
-                  onChange={(event) =>
-                    setRegionForm((current) => ({
-                      ...current,
-                      radius_miles: Number(event.target.value),
-                    }))
-                  }
-                  type="number"
-                  value={regionForm.radius_miles}
-                />
-                <button
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
-                  onClick={() => void addRegion()}
-                  type="button"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add
-                </button>
-              </div>
+                      return (
+                        <QuickPickButton
+                          disabled={watched || dataLoading}
+                          Icon={MapPin}
+                          key={`rail-${suggestion.id}:${suggestion.label}`}
+                          onClick={() =>
+                            void addRegion({
+                              label: suggestion.label,
+                              source_id: suggestion.source_id,
+                              jurisdiction_kind: suggestion.jurisdiction_kind,
+                              lat: suggestion.lat,
+                              lng: suggestion.lng,
+                            })
+                          }
+                          selected={watched}
+                        >
+                          {suggestion.label}
+                        </QuickPickButton>
+                      );
+                    })}
+                  </div>
+                </div>
 
-              <div className="mt-2 grid gap-2 sm:grid-cols-[130px_1fr_1fr_auto]">
-                <select
-                  className="rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setTopicForm((current) => ({
-                      ...current,
-                      topic_type: event.target.value as TopicType,
-                    }))
-                  }
-                  value={topicForm.topic_type}
-                >
-                  <option value="topic">Topic</option>
-                  <option value="bill_keyword">Bill keyword</option>
-                  <option value="agency">Agency</option>
-                  <option value="committee">Committee</option>
-                  <option value="local_body">Local body</option>
-                </select>
-                <input
-                  className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setTopicForm((current) => ({ ...current, label: event.target.value }))
-                  }
-                  placeholder="Label"
-                  value={topicForm.label}
-                />
-                <input
-                  className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                  onChange={(event) =>
-                    setTopicForm((current) => ({ ...current, query: event.target.value }))
-                  }
-                  placeholder="Match text"
-                  value={topicForm.query}
-                />
-                <button
-                  className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
-                  onClick={() => void addTopic()}
-                  type="button"
-                >
-                  <Plus className="h-4 w-4" />
-                  Add
-                </button>
-              </div>
+                <form className="grid gap-2" onSubmit={handleRegionSubmit}>
+                  <label className="grid gap-1">
+                    <FieldLabel>Custom place</FieldLabel>
+                    <input
+                      className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                      onChange={(event) =>
+                        setRegionForm((current) => ({ ...current, label: event.target.value }))
+                      }
+                      placeholder="Custom region"
+                      value={regionForm.label}
+                    />
+                  </label>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <label className="grid min-w-0 gap-1">
+                      <FieldLabel>Radius</FieldLabel>
+                      <span className="flex min-w-0 items-stretch overflow-hidden rounded-md border border-zinc-200 bg-white focus-within:border-teal-500">
+                        <input
+                          aria-label="Radius in miles"
+                          className="min-w-0 flex-1 border-0 px-3 py-2 text-sm outline-none"
+                          max={MAX_RADIUS_MILES}
+                          min={MIN_RADIUS_MILES}
+                          onChange={(event) =>
+                            setRegionForm((current) => ({
+                              ...current,
+                              radius_miles: event.target.value,
+                            }))
+                          }
+                          step={1}
+                          type="number"
+                          value={regionForm.radius_miles}
+                        />
+                        <span className="grid shrink-0 place-items-center border-l border-zinc-200 bg-zinc-50 px-2 text-xs font-medium text-zinc-500">
+                          miles
+                        </span>
+                      </span>
+                    </label>
+                    <button
+                      className="mt-5 inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={dataLoading}
+                      type="submit"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add place
+                    </button>
+                  </div>
+                </form>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {regions.map((region) => (
-                  <button
-                    className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800 ring-1 ring-teal-200"
-                    key={region.id}
-                    onClick={() => void deleteRow("civic_user_regions", region.id)}
-                    title="Remove region"
-                    type="button"
-                  >
-                    {region.label}
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                ))}
-                {topics.map((topic) => (
-                  <button
-                    className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800 ring-1 ring-sky-200"
-                    key={topic.id}
-                    onClick={() => void deleteRow("civic_user_topics", topic.id)}
-                    title="Remove topic"
-                    type="button"
-                  >
-                    {topic.label}
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                ))}
-              </div>
-            </div>
+                <div>
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                    Quick topics
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {topicSuggestions.slice(0, 5).map((suggestion) => {
+                      const watched =
+                        watchedTopicKeys.has(normalizeSearch(suggestion.label)) ||
+                        watchedTopicKeys.has(normalizeSearch(suggestion.query));
 
-            <div className="rounded-lg border border-zinc-200 p-3">
-              <div className="flex items-center gap-2">
-                <Lock className="h-4 w-4 text-teal-700" />
-                <FieldLabel>Private civic context</FieldLabel>
+                      return (
+                        <QuickPickButton
+                          disabled={watched || dataLoading}
+                          Icon={Target}
+                          key={`rail-${suggestion.label}`}
+                          onClick={() =>
+                            void addTopic({
+                              label: suggestion.label,
+                              query: suggestion.query,
+                              topic_type: "topic",
+                            })
+                          }
+                          selected={watched}
+                        >
+                          {suggestion.label}
+                        </QuickPickButton>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <form className="grid gap-2" onSubmit={handleTopicSubmit}>
+                  <label className="grid gap-1">
+                    <FieldLabel>Topic type</FieldLabel>
+                    <select
+                      className="rounded-md border border-zinc-200 px-2 py-2 text-sm outline-none focus:border-teal-500"
+                      onChange={(event) =>
+                        setTopicForm((current) => ({
+                          ...current,
+                          topic_type: event.target.value as TopicType,
+                        }))
+                      }
+                      value={topicForm.topic_type}
+                    >
+                      <option value="topic">Topic</option>
+                      <option value="bill_keyword">Bill keyword</option>
+                      <option value="agency">Agency</option>
+                      <option value="committee">Committee</option>
+                      <option value="local_body">Local body</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-1">
+                    <FieldLabel>Custom topic</FieldLabel>
+                    <input
+                      className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                      onChange={(event) =>
+                        setTopicForm((current) => ({ ...current, label: event.target.value }))
+                      }
+                      placeholder="Custom topic label"
+                      value={topicForm.label}
+                    />
+                  </label>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <label className="grid min-w-0 gap-1">
+                      <FieldLabel>Match text</FieldLabel>
+                      <input
+                        className="min-w-0 rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
+                        onChange={(event) =>
+                          setTopicForm((current) => ({ ...current, query: event.target.value }))
+                        }
+                        placeholder="Match text"
+                        value={topicForm.query}
+                      />
+                    </label>
+                    <button
+                      className="mt-5 inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={dataLoading}
+                      type="submit"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Add
+                    </button>
+                  </div>
+                </form>
+
+                <div className="flex flex-wrap gap-2 border-t border-zinc-100 pt-3">
+                  {regions.map((region) => (
+                    <button
+                      className="inline-flex items-center gap-1 rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-800 ring-1 ring-teal-200"
+                      key={region.id}
+                      onClick={() => void deleteRow("civic_user_regions", region.id)}
+                      title="Remove region"
+                      type="button"
+                    >
+                      {region.label}
+                      <span className="text-teal-700/70">({region.radius_miles} mi)</span>
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  ))}
+                  {topics.map((topic) => (
+                    <button
+                      className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-800 ring-1 ring-sky-200"
+                      key={topic.id}
+                      onClick={() => void deleteRow("civic_user_topics", topic.id)}
+                      title="Remove topic"
+                      type="button"
+                    >
+                      {topic.label}
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="mt-2 grid gap-2">
+            </DisclosurePanel>
+
+            <DisclosurePanel
+              Icon={Lock}
+              subtitle="Goals, concerns, and consent"
+              title="Private context"
+            >
+              <div className="grid gap-2">
                 <textarea
                   className="min-h-20 rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
                   onChange={(event) =>
@@ -2721,11 +2967,11 @@ export default function CivicAgentConsole({
                 </button>
               </div>
               {statusMessage(dataError, dataSuccess)}
-            </div>
-          </div>
+            </DisclosurePanel>
+          </aside>
 
-          <div className="min-w-0">
-            <div className="inline-flex flex-wrap rounded-lg border border-zinc-200 bg-white p-1 shadow-sm">
+          <div className="order-1 min-w-0 xl:order-1">
+            <div className="inline-flex flex-wrap rounded-lg border border-zinc-200/80 bg-white p-1 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
               {AGENT_VIEWS.map(({ id, label, Icon }) => (
                 <button
                   className={`inline-flex items-center gap-1.5 rounded-md px-3 py-2 text-sm font-medium transition ${
@@ -2744,16 +2990,26 @@ export default function CivicAgentConsole({
             </div>
 
             {agentView === "alerts" ? (
-              <div className="mt-3 rounded-lg border border-zinc-200 p-3">
+              <div className="mt-3 rounded-lg border border-zinc-200/80 bg-white/95 p-4 shadow-[0_1px_2px_rgb(24_31_27/0.06)]">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <FieldLabel>Matched civic alerts</FieldLabel>
+                    <FieldLabel>
+                      {hasMatchedAlerts ? "Matched civic alerts" : "Live civic feed"}
+                    </FieldLabel>
                     <h3 className="mt-1 text-lg font-semibold text-zinc-950">
-                      {matchedEvents.length} current matches
+                      {hasMatchedAlerts
+                        ? `${matchedEvents.length} current matches`
+                        : "Pick a place or topic to personalize this feed"}
                     </h3>
+                    {!hasMatchedAlerts ? (
+                      <p className="mt-1 text-sm text-zinc-500">
+                        Recent items stay visible while your personal radar learns what to watch.
+                      </p>
+                    ) : null}
                   </div>
                   <button
-                    className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:text-teal-700"
+                    className="inline-flex items-center justify-center gap-2 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-700 hover:border-teal-500 hover:bg-white hover:text-teal-700 disabled:cursor-not-allowed disabled:opacity-50"
+                    disabled={!hasMatchedAlerts}
                     onClick={() => void syncAlertMatches()}
                     type="button"
                   >
@@ -2762,14 +3018,85 @@ export default function CivicAgentConsole({
                   </button>
                 </div>
 
+                {!hasMatchedAlerts ? (
+                  <div className="mt-4 grid gap-3 rounded-lg border border-teal-200/80 bg-[#f0fdfa] p-3 lg:grid-cols-2">
+                    <div>
+                      <div className="mb-2 flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-teal-700" />
+                        <p className="text-xs font-medium uppercase tracking-wide text-teal-800">
+                          Start with a place
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {regionSuggestions.slice(0, 5).map((suggestion) => {
+                          const watched = watchedRegionKeys.has(normalizeSearch(suggestion.label));
+
+                          return (
+                            <QuickPickButton
+                              disabled={watched || dataLoading}
+                              Icon={MapPin}
+                              key={`feed-${suggestion.id}:${suggestion.label}`}
+                              onClick={() =>
+                                void addRegion({
+                                  label: suggestion.label,
+                                  source_id: suggestion.source_id,
+                                  jurisdiction_kind: suggestion.jurisdiction_kind,
+                                  lat: suggestion.lat,
+                                  lng: suggestion.lng,
+                                })
+                              }
+                              selected={watched}
+                            >
+                              {suggestion.label}
+                            </QuickPickButton>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="mb-2 flex items-center gap-2">
+                        <Target className="h-4 w-4 text-teal-700" />
+                        <p className="text-xs font-medium uppercase tracking-wide text-teal-800">
+                          Then add a topic
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {topicSuggestions.slice(0, 6).map((suggestion) => {
+                          const watched =
+                            watchedTopicKeys.has(normalizeSearch(suggestion.label)) ||
+                            watchedTopicKeys.has(normalizeSearch(suggestion.query));
+
+                          return (
+                            <QuickPickButton
+                              disabled={watched || dataLoading}
+                              Icon={Target}
+                              key={`feed-${suggestion.label}`}
+                              onClick={() =>
+                                void addTopic({
+                                  label: suggestion.label,
+                                  query: suggestion.query,
+                                  topic_type: "topic",
+                                })
+                              }
+                              selected={watched}
+                            >
+                              {suggestion.label}
+                            </QuickPickButton>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+
                 <div className="mt-3 grid max-h-[560px] gap-2 overflow-auto pr-1">
-                  {(matchedEvents.length > 0 ? matchedEvents : civicEvents.slice(0, 8)).map(
+                  {alertEvents.map(
                     (event) => (
                       <article
                         className={`rounded-lg border p-3 transition ${
-                          activeEvent?.id === event.id
-                            ? "border-teal-500 bg-teal-50"
-                            : "border-zinc-200 bg-white hover:border-zinc-300"
+                          hasMatchedAlerts && activeEvent?.id === event.id
+                            ? "border-teal-500 bg-teal-50/70"
+                            : "border-zinc-200/80 bg-white hover:border-zinc-300 hover:bg-zinc-50"
                         }`}
                         key={`${event.eventKind}:${event.id}`}
                       >
@@ -2828,7 +3155,7 @@ export default function CivicAgentConsole({
                             Burden: {event.burden.reasons.join("; ")}
                           </p>
                         </button>
-                        {renderFeedbackButtons(event)}
+                        {hasMatchedAlerts ? renderFeedbackButtons(event) : null}
                       </article>
                     ),
                   )}
@@ -3178,19 +3505,29 @@ export default function CivicAgentConsole({
                     placeholder="Topic"
                     value={candidateForm.topic_query}
                   />
-                  <input
-                    className="rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
-                    max={100}
-                    min={3}
-                    onChange={(event) =>
-                      setCandidateForm((current) => ({
-                        ...current,
-                        min_threshold: Number(event.target.value),
-                      }))
-                    }
-                    type="number"
-                    value={candidateForm.min_threshold}
-                  />
+                  <label className="grid gap-1">
+                    <FieldLabel>Minimum responses</FieldLabel>
+                    <span className="flex min-w-0 items-stretch overflow-hidden rounded-md border border-zinc-200 bg-white focus-within:border-teal-500">
+                      <input
+                        aria-label="Minimum responses"
+                        className="min-w-0 flex-1 border-0 px-3 py-2 text-sm outline-none"
+                        max={MAX_PUBLIC_PULSE_MINIMUM}
+                        min={MIN_PUBLIC_PULSE_MINIMUM}
+                        onChange={(event) =>
+                          setCandidateForm((current) => ({
+                            ...current,
+                            min_threshold: event.target.value,
+                          }))
+                        }
+                        step={1}
+                        type="number"
+                        value={candidateForm.min_threshold}
+                      />
+                      <span className="grid shrink-0 place-items-center border-l border-zinc-200 bg-zinc-50 px-2 text-xs font-medium text-zinc-500">
+                        responses
+                      </span>
+                    </span>
+                  </label>
                 </div>
                 <textarea
                   className="mt-2 min-h-24 w-full rounded-md border border-zinc-200 px-3 py-2 text-sm outline-none focus:border-teal-500"
@@ -3233,6 +3570,21 @@ export default function CivicAgentConsole({
               </div>
             ) : null}
           </div>
+        </div>
+      ) : null}
+      </div>
+
+      {!isAuthChecking && !isSignedIn ? (
+        <div className="absolute inset-0 z-30 flex min-h-full items-start justify-center rounded-lg bg-zinc-950/72 px-3 py-10 backdrop-blur-md sm:px-6 md:items-center">
+          {isConfigured ? (
+            <div className="w-full max-w-[460px] rounded-lg border border-zinc-200/80 bg-white p-4 shadow-[0_24px_80px_rgb(0_0_0/0.35)]">
+              {authForm}
+            </div>
+          ) : (
+            <div className="w-full max-w-[460px] rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900 shadow-[0_24px_80px_rgb(0_0_0/0.30)]">
+              Supabase public config is missing, so account sign-in is not available.
+            </div>
+          )}
         </div>
       ) : null}
     </section>

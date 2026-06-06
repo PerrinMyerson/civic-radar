@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f5f7f4;
+  --background: #f6f7f2;
   --foreground: #181f1b;
 }
 
@@ -28,13 +28,27 @@ body {
 
 a,
 button,
-input {
+input,
+select,
+textarea {
   letter-spacing: 0;
 }
 
 button,
 a {
   touch-action: manipulation;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid #0f766e;
+  outline-offset: 2px;
 }
 
 .line-clamp-2 {
@@ -83,12 +97,157 @@ a {
 }
 
 .civic-marker-selected {
-  background: #2563eb;
+  background: #0f766e;
   box-shadow:
-    0 10px 24px rgb(37 99 235 / 30%),
-    0 0 0 6px rgb(37 99 235 / 18%);
+    0 10px 24px rgb(15 118 110 / 30%),
+    0 0 0 6px rgb(15 118 110 / 18%);
 }
 
 .leaflet-popup-content-wrapper {
   border-radius: 8px;
+}
+
+.civic-radar-shell {
+  isolation: isolate;
+}
+
+.civic-ambient-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgb(15 118 110 / 6%) 1px, transparent 1px) 0 0 / 42px 42px,
+    linear-gradient(0deg, rgb(15 118 110 / 5%) 1px, transparent 1px) 0 0 / 42px 42px,
+    linear-gradient(135deg, rgb(245 158 11 / 9%), transparent 32%),
+    linear-gradient(315deg, rgb(14 165 233 / 8%), transparent 34%);
+}
+
+.civic-ambient-background::before {
+  content: "";
+  position: absolute;
+  top: 76px;
+  right: max(-220px, -12vw);
+  width: min(780px, 76vw);
+  aspect-ratio: 1;
+  border: 1px solid rgb(15 118 110 / 16%);
+  border-radius: 999px;
+  background:
+    repeating-radial-gradient(
+      circle,
+      transparent 0 72px,
+      rgb(15 118 110 / 12%) 73px 74px,
+      transparent 75px 144px
+    ),
+    conic-gradient(
+      from 38deg,
+      transparent 0deg,
+      transparent 262deg,
+      rgb(15 118 110 / 18%) 306deg,
+      transparent 348deg
+    );
+  opacity: 0.82;
+  transform-origin: center;
+  animation: civic-radar-sweep 24s linear infinite;
+}
+
+.civic-ambient-background::after {
+  content: "";
+  position: absolute;
+  left: -12%;
+  top: 28%;
+  width: 128%;
+  height: 190px;
+  background:
+    linear-gradient(102deg, transparent 0 14%, rgb(15 118 110 / 7%) 14.25% 14.35%, transparent 14.5% 100%),
+    linear-gradient(168deg, transparent 0 38%, rgb(217 119 6 / 8%) 38.25% 38.35%, transparent 38.5% 100%),
+    linear-gradient(28deg, transparent 0 58%, rgb(14 165 233 / 8%) 58.25% 58.35%, transparent 58.5% 100%);
+  opacity: 0.52;
+}
+
+.civic-signal-path,
+.civic-signal-node {
+  position: absolute;
+  display: block;
+}
+
+.civic-signal-path {
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, rgb(15 118 110 / 30%), transparent);
+  transform-origin: center;
+}
+
+.civic-signal-path-a {
+  left: 8%;
+  top: 180px;
+  width: 340px;
+  transform: rotate(-12deg);
+  animation: civic-signal-drift 12s ease-in-out infinite;
+}
+
+.civic-signal-path-b {
+  right: 10%;
+  top: 520px;
+  width: 460px;
+  background: linear-gradient(90deg, transparent, rgb(217 119 6 / 28%), transparent);
+  transform: rotate(18deg);
+  animation: civic-signal-drift 15s ease-in-out infinite reverse;
+}
+
+.civic-signal-node {
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgb(15 118 110 / 42%);
+  background: rgb(246 247 242 / 90%);
+  box-shadow: 0 0 0 6px rgb(15 118 110 / 8%);
+  transform: rotate(45deg);
+}
+
+.civic-signal-node-a {
+  left: 16%;
+  top: 220px;
+}
+
+.civic-signal-node-b {
+  right: 22%;
+  top: 370px;
+  border-color: rgb(217 119 6 / 42%);
+  box-shadow: 0 0 0 6px rgb(217 119 6 / 8%);
+}
+
+.civic-signal-node-c {
+  right: 9%;
+  top: 660px;
+  border-color: rgb(14 165 233 / 40%);
+  box-shadow: 0 0 0 6px rgb(14 165 233 / 8%);
+}
+
+@keyframes civic-radar-sweep {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes civic-signal-drift {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+
+  50% {
+    translate: 18px 10px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .civic-ambient-background::before,
+  .civic-signal-path {
+    animation: none;
+  }
 }
