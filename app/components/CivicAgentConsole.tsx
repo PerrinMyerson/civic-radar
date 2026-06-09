@@ -28,6 +28,10 @@ import {
   civicBurdenForEvent,
   type CivicBurdenResult,
 } from "../../shared/civic-burden";
+import {
+  BAY_AREA_DEMO_PERSONAS,
+  type BayAreaDemoPersona,
+} from "./bayAreaDemoPersonas";
 
 declare global {
   interface Window {
@@ -244,9 +248,12 @@ type CandidateTopicSummary = {
 };
 
 const SESSION_STORAGE_KEY = "civic-radar:supabase-session";
+const DEMO_MODE_STORAGE_KEY = "civic-radar:bay-area-demo";
+const DEMO_PERSONA_STORAGE_KEY = "civic-radar:bay-area-demo-persona";
 const DEFAULT_SUPABASE_URL = "https://aknpdgbtbpmfrpeuivyq.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFrbnBkZ2J0YnBtZnJwZXVpdnlxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1OTY4MjIsImV4cCI6MjA5NjE3MjgyMn0.rmFb_8APPEyAXxx0bJ3AOx8gXlKZVIbbQFkNF_ZISKQ";
+const DEMO_USER_ID_PREFIX = "demo-bay-area";
 
 const DEFAULT_CONTEXT: CivicPrivateContext = {
   user_id: "",
@@ -409,6 +416,181 @@ function readStoredSession() {
     window.localStorage.removeItem(SESSION_STORAGE_KEY);
     return null;
   }
+}
+
+function isBayAreaDemoRequested() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  return params.get("demo") === "bay-area" || params.get("demo") === "1";
+}
+
+function readStoredDemoMode() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+
+  return (
+    isBayAreaDemoRequested() ||
+    window.localStorage.getItem(DEMO_MODE_STORAGE_KEY) === "bay-area"
+  );
+}
+
+function readStoredDemoPersonaId() {
+  const fallbackId = BAY_AREA_DEMO_PERSONAS[0]?.id ?? "";
+  if (typeof window === "undefined") {
+    return fallbackId;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const requested = params.get("persona") ?? window.localStorage.getItem(DEMO_PERSONA_STORAGE_KEY);
+  const exists = BAY_AREA_DEMO_PERSONAS.some((persona) => persona.id === requested);
+  return exists && requested ? requested : fallbackId;
+}
+
+function demoUserId(personaId: string) {
+  return `${DEMO_USER_ID_PREFIX}-${personaId}`;
+}
+
+function demoSessionForPersona(persona: BayAreaDemoPersona): SupabaseSession {
+  return {
+    access_token: `demo-session-${persona.id}`,
+    user: {
+      email: persona.email,
+      id: demoUserId(persona.id),
+    },
+  };
+}
+
+function demoProfileForPersona(persona: BayAreaDemoPersona): CivicProfile {
+  return {
+    display_name: persona.displayName,
+    email: persona.email,
+    home_region: persona.homeRegion,
+    notification_email: persona.email,
+    notify_frequency: persona.notifyFrequency,
+    onboarding_completed_at: new Date(0).toISOString(),
+    onboarding_version: ONBOARDING_VERSION,
+    user_id: demoUserId(persona.id),
+  };
+}
+
+function demoRegionsForPersona(persona: BayAreaDemoPersona): CivicRegion[] {
+  return persona.regions.map((region, index) => ({
+    id: `${persona.id}-region-${index + 1}`,
+    jurisdiction_kind: region.jurisdictionKind,
+    label: region.label,
+    lat: region.lat,
+    lng: region.lng,
+    radius_miles: region.radiusMiles,
+    source_id: region.sourceId,
+    user_id: demoUserId(persona.id),
+  }));
+}
+
+function demoTopicsForPersona(persona: BayAreaDemoPersona): CivicTopic[] {
+  return persona.topics.map((topic, index) => ({
+    id: `${persona.id}-topic-${index + 1}`,
+    label: topic.label,
+    query: topic.query,
+    topic_type: topic.topicType,
+    user_id: demoUserId(persona.id),
+  }));
+}
+
+function demoContextForPersona(persona: BayAreaDemoPersona): CivicPrivateContext {
+  return {
+    agent_consent: true,
+    candidate_agent_consent: true,
+    concerns: persona.concerns,
+    goals: persona.goals,
+    life_context: persona.lifeContext,
+    policy_priorities: persona.policyPriorities,
+    user_id: demoUserId(persona.id),
+  };
+}
+
+function demoCandidateSummary(
+  regionQuery: string,
+  topicQuery: string,
+  minimumResponses: number,
+): CandidateTopicSummary {
+  const normalizedRegion =
+    normalizeSearch(regionQuery) === "bay area" ? "" : normalizeSearch(regionQuery);
+  const normalizedTopic = normalizeSearch(topicQuery);
+  const scoped = BAY_AREA_DEMO_PERSONAS.filter((persona) => {
+    const regionText = normalizeSearch(
+      [persona.homeRegion, persona.feedback.regionLabel, ...persona.regions.map((region) => region.label)].join(" "),
+    );
+    const topicText = normalizeSearch(
+      [
+        persona.feedback.reason,
+        persona.feedback.desiredOutcome,
+        ...persona.feedback.topicTags,
+        ...persona.topics.flatMap((topic) => [topic.label, topic.query]),
+      ].join(" "),
+    );
+
+    return (
+      (!normalizedRegion || regionText.includes(normalizedRegion)) &&
+      (!normalizedTopic || topicText.includes(normalizedTopic))
+    );
+  });
+  const thresholdMet = scoped.length >= minimumResponses;
+
+  return {
+    average_affectedness: thresholdMet
+      ? Number(
+          (
+            scoped.reduce((sum, persona) => sum + persona.feedback.affectedness, 0) /
+            scoped.length
+          ).toFixed(2),
+        )
+      : null,
+    average_urgency: thresholdMet
+      ? Number(
+          (
+            scoped.reduce((sum, persona) => sum + persona.feedback.urgency, 0) /
+            scoped.length
+          ).toFixed(2),
+        )
+      : null,
+    oppose_count: thresholdMet
+      ? scoped.filter((persona) => persona.feedback.position === "oppose").length
+      : 0,
+    region_label: regionQuery.trim() || "Bay Area demo residents",
+    support_count: thresholdMet
+      ? scoped.filter((persona) => persona.feedback.position === "support").length
+      : 0,
+    threshold_met: thresholdMet,
+    topic_query: topicQuery.trim() || "All demo topics",
+    total_count: thresholdMet ? scoped.length : 0,
+    unsure_count: thresholdMet
+      ? scoped.filter((persona) => persona.feedback.position === "unsure").length
+      : 0,
+  };
+}
+
+function demoEventSummary(event: CivicEvent): EventSignalSummary {
+  const summary = demoCandidateSummary("", "", DEFAULT_PUBLIC_PULSE_MINIMUM);
+
+  return {
+    average_affectedness: summary.average_affectedness,
+    average_urgency: summary.average_urgency,
+    event_id: event.id,
+    event_kind: event.eventKind,
+    oppose_count: summary.oppose_count,
+    support_count: summary.support_count,
+    threshold_met: summary.threshold_met,
+    total_count: summary.total_count,
+    unsure_count: summary.unsure_count,
+  };
+}
+
+function isValidEmail(value: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
 function authHeaders(config: SupabaseConfig, token?: string) {
@@ -1028,6 +1210,10 @@ export default function CivicAgentConsole({
   const [supabase, setSupabase] = useState<SupabaseConfig | null>(null);
   const [configResolved, setConfigResolved] = useState(false);
   const [session, setSession] = useState<SupabaseSession | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
+  const [demoPersonaId, setDemoPersonaId] = useState(
+    BAY_AREA_DEMO_PERSONAS[0]?.id ?? "",
+  );
   const [authMode, setAuthMode] = useState<"signin" | "signup">("signin");
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -1085,11 +1271,28 @@ export default function CivicAgentConsole({
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   const [feedbackSaving, setFeedbackSaving] = useState("");
   const syncedMatchesRef = useRef("");
+  const activeDemoPersona = useMemo(
+    () =>
+      BAY_AREA_DEMO_PERSONAS.find((persona) => persona.id === demoPersonaId) ??
+      BAY_AREA_DEMO_PERSONAS[0] ??
+      null,
+    [demoPersonaId],
+  );
+  const agentContext = useMemo(
+    () =>
+      context.agent_consent
+        ? context
+        : {
+            ...DEFAULT_CONTEXT,
+            user_id: context.user_id,
+          },
+    [context],
+  );
 
   const civicEvents = useMemo(() => flattenEvents(data), [data]);
   const matchedEvents = useMemo(
-    () => matchEvents(civicEvents, regions, topics, context),
-    [civicEvents, context, regions, topics],
+    () => matchEvents(civicEvents, regions, topics, agentContext),
+    [agentContext, civicEvents, regions, topics],
   );
   const activeEvent = useMemo(() => {
     return (
@@ -1111,11 +1314,15 @@ export default function CivicAgentConsole({
     [activeEvent, topics],
   );
 
-  const isConfigured = Boolean(supabase);
+  const isConfigured = demoMode || Boolean(supabase);
   const isSignedIn = Boolean(session?.access_token);
   const isAuthChecking = !authResolved;
   const showOnboarding = Boolean(
-    isSignedIn && profile && !profile.onboarding_completed_at && !onboardingDismissed,
+    !demoMode &&
+      isSignedIn &&
+      profile &&
+      !profile.onboarding_completed_at &&
+      !onboardingDismissed,
   );
   const methodologyHref =
     typeof window !== "undefined" && window.__CIVIC_DATA_URL__
@@ -1222,12 +1429,87 @@ export default function CivicAgentConsole({
     return () => window.clearTimeout(configTimer);
   }, []);
 
+  useEffect(() => {
+    const demoTimer = window.setTimeout(() => {
+      const enabled = readStoredDemoMode();
+      const personaId = readStoredDemoPersonaId();
+
+      if (enabled) {
+        window.localStorage.setItem(DEMO_MODE_STORAGE_KEY, "bay-area");
+        window.localStorage.setItem(DEMO_PERSONA_STORAGE_KEY, personaId);
+      }
+
+      setDemoMode(enabled);
+      setDemoPersonaId(personaId);
+    }, 0);
+
+    return () => window.clearTimeout(demoTimer);
+  }, []);
+
+  useEffect(() => {
+    if (!demoMode || !activeDemoPersona) {
+      return;
+    }
+
+    const demoTimer = window.setTimeout(() => {
+      const nextProfile = demoProfileForPersona(activeDemoPersona);
+      const nextContext = demoContextForPersona(activeDemoPersona);
+
+      setSession(demoSessionForPersona(activeDemoPersona));
+      setAuthResolved(true);
+      setAuthError("");
+      setAuthSuccess("");
+      setProfile(nextProfile);
+      setProfileForm({
+        display_name: nextProfile.display_name,
+        home_region: nextProfile.home_region,
+        notification_email: nextProfile.notification_email,
+        notify_frequency: nextProfile.notify_frequency,
+      });
+      setRegions(demoRegionsForPersona(activeDemoPersona));
+      setTopics(demoTopicsForPersona(activeDemoPersona));
+      setContext(nextContext);
+      setContextForm({
+        agent_consent: nextContext.agent_consent,
+        candidate_agent_consent: nextContext.candidate_agent_consent,
+        concerns: joinLines(nextContext.concerns),
+        goals: joinLines(nextContext.goals),
+        life_context: nextContext.life_context,
+        policy_priorities: priorityJsonToText(nextContext.policy_priorities),
+      });
+      setPosition(activeDemoPersona.feedback.position);
+      setUrgency(activeDemoPersona.feedback.urgency);
+      setAffectedness(activeDemoPersona.feedback.affectedness);
+      setReason(activeDemoPersona.feedback.reason);
+      setDesiredOutcome(activeDemoPersona.feedback.desiredOutcome);
+      setCandidateForm({
+        min_threshold: String(DEFAULT_PUBLIC_PULSE_MINIMUM),
+        question: "What are Bay Area residents signaling on this topic?",
+        region_label: "Bay Area",
+        requester_role: "public",
+        topic_query: "",
+      });
+      setCandidateSummary(null);
+      setEventSummary(null);
+      setBrief(null);
+      setAdvocacyDraft("");
+      setDataError("");
+      setDataSuccess(`Loaded ${activeDemoPersona.displayName}`);
+    }, 0);
+
+    return () => window.clearTimeout(demoTimer);
+  }, [activeDemoPersona, demoMode]);
+
   const setAndSaveSession = useCallback((nextSession: SupabaseSession | null) => {
     setSession(nextSession);
     saveSession(nextSession);
   }, []);
 
   const loadUserData = useCallback(async () => {
+    if (demoMode) {
+      return;
+    }
+
     if (!supabase || !session?.access_token || !session.user.id) {
       return;
     }
@@ -1311,11 +1593,19 @@ export default function CivicAgentConsole({
     } finally {
       setDataLoading(false);
     }
-  }, [session?.access_token, session?.user.email, session?.user.id, supabase]);
+  }, [demoMode, session?.access_token, session?.user.email, session?.user.id, supabase]);
 
   useEffect(() => {
     if (!configResolved) {
       return;
+    }
+
+    if (demoMode) {
+      const authTimer = window.setTimeout(() => {
+        setAuthResolved(true);
+      }, 0);
+
+      return () => window.clearTimeout(authTimer);
     }
 
     if (!supabase) {
@@ -1380,7 +1670,7 @@ export default function CivicAgentConsole({
     return () => {
       mounted = false;
     };
-  }, [configResolved, setAndSaveSession, supabase]);
+  }, [configResolved, demoMode, setAndSaveSession, supabase]);
 
   useEffect(() => {
     if (session?.access_token) {
@@ -1394,6 +1684,14 @@ export default function CivicAgentConsole({
 
   const syncAlertMatches = useCallback(
     async (silent = false) => {
+      if (demoMode) {
+        if (!silent) {
+          setDataError("");
+          setDataSuccess("Demo alert matches saved locally");
+        }
+        return;
+      }
+
       if (!supabase || !session?.access_token || !session.user.id || matchedEvents.length === 0) {
         return;
       }
@@ -1429,8 +1727,32 @@ export default function CivicAgentConsole({
             token: session.access_token,
           },
         );
-        await Promise.all([
-          supabaseRequest<unknown>(
+        await supabaseRequest<unknown>(
+          supabase,
+          "/rest/v1/civic_notifications?on_conflict=user_id,event_id,event_kind,notification_kind",
+          {
+            body: matchedEvents.slice(0, 40).map((event) => ({
+              delivery_state: "pending",
+              event_id: event.id,
+              event_kind: event.eventKind,
+              notification_kind: "in_app",
+              relevance_reasons: event.relevanceReasons,
+              relevance_score: event.relevanceScore,
+              source_url: event.sourceUrl,
+              summary: compactText(event.summary, 600),
+              title: event.title,
+              user_id: session.user.id,
+            })),
+            headers: {
+              Prefer: "resolution=merge-duplicates",
+            },
+            method: "POST",
+            token: session.access_token,
+          },
+        );
+
+        try {
+          await supabaseRequest<unknown>(
             supabase,
             "/rest/v1/civic_event_relevance_scores?on_conflict=user_id,event_id",
             {
@@ -1450,31 +1772,16 @@ export default function CivicAgentConsole({
               method: "POST",
               token: session.access_token,
             },
-          ),
-          supabaseRequest<unknown>(
-            supabase,
-            "/rest/v1/civic_notifications?on_conflict=user_id,event_id,event_kind,notification_kind",
-            {
-              body: matchedEvents.slice(0, 40).map((event) => ({
-                delivery_state: "pending",
-                event_id: event.id,
-                event_kind: event.eventKind,
-                notification_kind: "in_app",
-                relevance_reasons: event.relevanceReasons,
-                relevance_score: event.relevanceScore,
-                source_url: event.sourceUrl,
-                summary: compactText(event.summary, 600),
-                title: event.title,
-                user_id: session.user.id,
-              })),
-              headers: {
-                Prefer: "resolution=merge-duplicates",
-              },
-              method: "POST",
-              token: session.access_token,
-            },
-          ),
-        ]);
+          );
+        } catch (error) {
+          if (!silent) {
+            setDataError(
+              error instanceof Error
+                ? `Alerts saved; relevance audit skipped: ${error.message}`
+                : "Alerts saved; relevance audit skipped",
+            );
+          }
+        }
 
         if (!silent) {
           setDataSuccess("Alert matches and in-app notifications synced");
@@ -1489,7 +1796,7 @@ export default function CivicAgentConsole({
         }
       }
     },
-    [matchedEvents, session?.access_token, session?.user.id, supabase],
+    [demoMode, matchedEvents, session?.access_token, session?.user.id, supabase],
   );
 
   useEffect(() => {
@@ -1557,6 +1864,21 @@ export default function CivicAgentConsole({
   }
 
   async function handleSignOut() {
+    if (demoMode) {
+      window.localStorage.removeItem(DEMO_MODE_STORAGE_KEY);
+      window.localStorage.removeItem(DEMO_PERSONA_STORAGE_KEY);
+      setDemoMode(false);
+      setSession(null);
+      setProfile(null);
+      setRegions([]);
+      setTopics([]);
+      setContext(DEFAULT_CONTEXT);
+      setDataError("");
+      setDataSuccess("Bay Area demo cleared");
+      setOnboardingDismissed(false);
+      return;
+    }
+
     if (supabase && session?.access_token) {
       await supabaseRequest<unknown>(supabase, "/auth/v1/logout", {
         method: "POST",
@@ -1573,7 +1895,37 @@ export default function CivicAgentConsole({
   }
 
   async function saveProfile() {
+    if (demoMode && session?.user.id) {
+      if (!isValidEmail(profileForm.notification_email)) {
+        setDataError("Enter a valid notification email");
+        setDataSuccess("");
+        return;
+      }
+
+      const nextProfile: CivicProfile = {
+        display_name: profileForm.display_name,
+        email: session.user.email ?? "",
+        home_region: profileForm.home_region,
+        notification_email: profileForm.notification_email,
+        notify_frequency: profileForm.notify_frequency,
+        onboarding_completed_at: profile?.onboarding_completed_at ?? new Date(0).toISOString(),
+        onboarding_version: ONBOARDING_VERSION,
+        user_id: session.user.id,
+      };
+
+      setProfile(nextProfile);
+      setDataError("");
+      setDataSuccess("Demo account saved locally");
+      return;
+    }
+
     if (!supabase || !session?.access_token || !session.user.id) {
+      return;
+    }
+
+    if (!isValidEmail(profileForm.notification_email)) {
+      setDataError("Enter a valid notification email");
+      setDataSuccess("");
       return;
     }
 
@@ -1621,6 +1973,14 @@ export default function CivicAgentConsole({
   }
 
   async function saveContext() {
+    if (demoMode && session?.user.id) {
+      const nextContext = buildContextPayload(session.user.id);
+      setContext(nextContext);
+      setDataError("");
+      setDataSuccess("Demo civic context saved locally");
+      return true;
+    }
+
     if (!supabase || !session?.access_token || !session.user.id) {
       return false;
     }
@@ -1661,7 +2021,7 @@ export default function CivicAgentConsole({
     lat?: number;
     lng?: number;
   }) {
-    if (!supabase || !session?.access_token || !session.user.id) {
+    if (!session?.user.id || (!demoMode && (!supabase || !session.access_token))) {
       return;
     }
 
@@ -1691,6 +2051,33 @@ export default function CivicAgentConsole({
     setDataLoading(true);
     setDataError("");
     setDataSuccess("");
+
+    if (demoMode) {
+      const row: CivicRegion = {
+        id: `${session.user.id}-region-${Date.now()}`,
+        jurisdiction_kind: region?.jurisdiction_kind ?? null,
+        label,
+        lat: region?.lat ?? null,
+        lng: region?.lng ?? null,
+        radius_miles: radiusMiles,
+        source_id: region?.source_id ?? null,
+        user_id: session.user.id,
+      };
+
+      setRegions((current) => [row, ...current]);
+      setProfileForm((current) =>
+        current.home_region
+          ? current
+          : {
+              ...current,
+              home_region: label,
+            },
+      );
+      setRegionForm({ label: "", radius_miles: String(DEFAULT_RADIUS_MILES) });
+      setDataLoading(false);
+      setDataSuccess("Demo region added locally");
+      return;
+    }
 
     try {
       const rows = await supabaseRequest<CivicRegion[]>(
@@ -1733,7 +2120,7 @@ export default function CivicAgentConsole({
   }
 
   async function addTopic(topic?: Partial<Pick<CivicTopic, "label" | "query" | "topic_type">>) {
-    if (!supabase || !session?.access_token || !session.user.id) {
+    if (!session?.user.id || (!demoMode && (!supabase || !session.access_token))) {
       return;
     }
 
@@ -1741,6 +2128,11 @@ export default function CivicAgentConsole({
     const query = (topic?.query ?? topicForm.query).trim() || label;
     if (!label || !query) {
       setDataError("Topic label and query are required");
+      return;
+    }
+
+    if (normalizeSearch(query).length < 2) {
+      setDataError("Topic query must be at least 2 searchable characters");
       return;
     }
 
@@ -1755,6 +2147,24 @@ export default function CivicAgentConsole({
     setDataLoading(true);
     setDataError("");
     setDataSuccess("");
+
+    if (demoMode) {
+      const row: CivicTopic = {
+        id: `${session.user.id}-topic-${Date.now()}`,
+        label,
+        query,
+        topic_type: topic?.topic_type ?? topicForm.topic_type,
+        user_id: session.user.id,
+      };
+
+      setTopics((current) => [row, ...current]);
+      if (!topic) {
+        setTopicForm(DEFAULT_TOPIC_FORM);
+      }
+      setDataLoading(false);
+      setDataSuccess("Demo topic added locally");
+      return;
+    }
 
     try {
       const rows = await supabaseRequest<CivicTopic[]>(
@@ -1798,6 +2208,17 @@ export default function CivicAgentConsole({
   }
 
   async function deleteRow(table: "civic_user_regions" | "civic_user_topics", id: string) {
+    if (demoMode) {
+      if (table === "civic_user_regions") {
+        setRegions((current) => current.filter((row) => row.id !== id));
+      } else {
+        setTopics((current) => current.filter((row) => row.id !== id));
+      }
+      setDataError("");
+      setDataSuccess("Demo row deleted locally");
+      return;
+    }
+
     if (!supabase || !session?.access_token) {
       return;
     }
@@ -1827,12 +2248,47 @@ export default function CivicAgentConsole({
   }
 
   async function completeOnboarding() {
+    if (demoMode && session?.user.id) {
+      if (!canCompleteOnboarding) {
+        setDataError(onboardingReadinessText);
+        setDataSuccess("");
+        return;
+      }
+
+      if (!isValidEmail(profileForm.notification_email)) {
+        setDataError("Enter a valid notification email");
+        setDataSuccess("");
+        return;
+      }
+
+      setProfile({
+        display_name: profileForm.display_name,
+        email: session.user.email ?? "",
+        home_region: profileForm.home_region,
+        notification_email: profileForm.notification_email,
+        notify_frequency: profileForm.notify_frequency,
+        onboarding_completed_at: new Date().toISOString(),
+        onboarding_version: ONBOARDING_VERSION,
+        user_id: session.user.id,
+      });
+      setContext(buildContextPayload(session.user.id));
+      setDataError("");
+      setDataSuccess("Demo onboarding complete");
+      return;
+    }
+
     if (!supabase || !session?.access_token || !session.user.id) {
       return;
     }
 
     if (!canCompleteOnboarding) {
       setDataError(onboardingReadinessText);
+      setDataSuccess("");
+      return;
+    }
+
+    if (!isValidEmail(profileForm.notification_email)) {
+      setDataError("Enter a valid notification email");
       setDataSuccess("");
       return;
     }
@@ -1897,6 +2353,17 @@ export default function CivicAgentConsole({
   }
 
   async function saveRelevanceFeedback(event: CivicEvent, feedbackType: RelevanceFeedbackType) {
+    if (demoMode) {
+      setFeedbackSaving(`${event.id}:${feedbackType}`);
+      setDataError("");
+      setDataSuccess("");
+      window.setTimeout(() => {
+        setFeedbackSaving("");
+        setDataSuccess("Demo relevance feedback saved locally");
+      }, 150);
+      return;
+    }
+
     if (!supabase || !session?.access_token || !session.user.id) {
       return;
     }
@@ -1941,16 +2408,16 @@ export default function CivicAgentConsole({
 
     let nextBrief = buildPolicyBrief(
       activeEvent,
-      context,
+      agentContext,
       profile,
       topics,
       activeMatchedEvent,
     );
-    if (supabase) {
+    if (supabase && !demoMode) {
       try {
         const edgeResponse = await fetch(`${supabase.url}/functions/v1/generate-civic-brief`, {
           body: JSON.stringify({
-            context,
+            context: agentContext,
             event: activeEvent,
             match: activeMatchedEvent
               ? {
@@ -1983,6 +2450,12 @@ export default function CivicAgentConsole({
     setBrief(nextBrief);
     setAdvocacyDraft("");
 
+    if (demoMode) {
+      setDataError("");
+      setDataSuccess("Demo brief generated locally");
+      return;
+    }
+
     if (!supabase || !session?.access_token || !session.user.id) {
       return;
     }
@@ -2013,7 +2486,17 @@ export default function CivicAgentConsole({
   }
 
   async function saveAdvocacyDraft(approved: boolean) {
-    if (!activeEvent || !brief || !advocacyDraft || !supabase || !session?.access_token || !session.user.id) {
+    if (!activeEvent || !brief || !advocacyDraft) {
+      return;
+    }
+
+    if (demoMode) {
+      setDataError("");
+      setDataSuccess(approved ? "Demo draft approved locally" : "Demo draft saved locally");
+      return;
+    }
+
+    if (!supabase || !session?.access_token || !session.user.id) {
       return;
     }
 
@@ -2045,41 +2528,55 @@ export default function CivicAgentConsole({
   }
 
   async function saveSignal() {
-    if (!activeEvent || !supabase || !session?.access_token || !session.user.id) {
+    if (!activeEvent) {
       return;
     }
+
+    if (demoMode) {
+      setEventSummary(demoEventSummary(activeEvent));
+      setDataError("");
+      setDataSuccess("Demo civic feedback saved locally");
+      return;
+    }
+
+    if (!supabase || !session?.access_token || !session.user.id) {
+      return;
+    }
+
+    const publicAnonymous = context.candidate_agent_consent;
 
     setDataLoading(true);
     setDataError("");
     setDataSuccess("");
 
     try {
-      await Promise.all([
-        supabaseRequest<unknown>(
-          supabase,
-          "/rest/v1/civic_user_feedback?on_conflict=user_id,event_id,event_kind",
-          {
-            body: {
-              affectedness,
-              desired_outcome: desiredOutcome.trim(),
-              event_id: activeEvent.id,
-              event_kind: activeEvent.eventKind,
-              intensity: urgency,
-              position,
-              public_anonymous: true,
-              reason: reason.trim(),
-              region_label: activeEvent.regionLabel,
-              topic_tags: activeTopicTags,
-              user_id: session.user.id,
-            },
-            headers: {
-              Prefer: "resolution=merge-duplicates",
-            },
-            method: "POST",
-            token: session.access_token,
+      await supabaseRequest<unknown>(
+        supabase,
+        "/rest/v1/civic_user_feedback?on_conflict=user_id,event_id,event_kind",
+        {
+          body: {
+            affectedness,
+            desired_outcome: desiredOutcome.trim(),
+            event_id: activeEvent.id,
+            event_kind: activeEvent.eventKind,
+            intensity: urgency,
+            position,
+            public_anonymous: publicAnonymous,
+            reason: reason.trim(),
+            region_label: activeEvent.regionLabel,
+            topic_tags: activeTopicTags,
+            user_id: session.user.id,
           },
-        ),
-        supabaseRequest<unknown>(
+          headers: {
+            Prefer: "resolution=merge-duplicates",
+          },
+          method: "POST",
+          token: session.access_token,
+        },
+      );
+
+      try {
+        await supabaseRequest<unknown>(
           supabase,
           "/rest/v1/civic_user_event_positions?on_conflict=user_id,event_id,event_kind",
           {
@@ -2088,7 +2585,7 @@ export default function CivicAgentConsole({
               event_id: activeEvent.id,
               event_kind: activeEvent.eventKind,
               position,
-              public_anonymous: true,
+              public_anonymous: publicAnonymous,
               reason: reason.trim(),
               region_label: activeEvent.regionLabel,
               topic_tags: activeTopicTags,
@@ -2101,9 +2598,24 @@ export default function CivicAgentConsole({
             method: "POST",
             token: session.access_token,
           },
-        ),
-      ]);
-      setDataSuccess("Anonymous civic feedback saved");
+        );
+      } catch (error) {
+        await supabaseRequest<unknown>(
+          supabase,
+          `/rest/v1/civic_user_feedback?user_id=eq.${session.user.id}&event_id=eq.${encodeURIComponent(
+            activeEvent.id,
+          )}&event_kind=eq.${activeEvent.eventKind}`,
+          {
+            method: "DELETE",
+            token: session.access_token,
+          },
+        ).catch(() => null);
+        throw error;
+      }
+
+      setDataSuccess(
+        publicAnonymous ? "Anonymous civic feedback saved" : "Private civic feedback saved",
+      );
       await refreshEventSummary();
     } catch (error) {
       setDataError(error instanceof Error ? error.message : "Unable to save signal");
@@ -2113,7 +2625,18 @@ export default function CivicAgentConsole({
   }
 
   async function refreshEventSummary() {
-    if (!activeEvent || !supabase) {
+    if (!activeEvent) {
+      return;
+    }
+
+    if (demoMode) {
+      setEventSummary(demoEventSummary(activeEvent));
+      setDataError("");
+      setDataSuccess("Loaded demo public signal");
+      return;
+    }
+
+    if (!supabase) {
       return;
     }
 
@@ -2153,10 +2676,6 @@ export default function CivicAgentConsole({
   }
 
   async function runCandidateQuery() {
-    if (!supabase) {
-      return;
-    }
-
     const minThreshold = integerInRange(
       candidateForm.min_threshold,
       MIN_PUBLIC_PULSE_MINIMUM,
@@ -2167,6 +2686,22 @@ export default function CivicAgentConsole({
         `Minimum responses must be a whole number from ${MIN_PUBLIC_PULSE_MINIMUM} to ${MAX_PUBLIC_PULSE_MINIMUM}`,
       );
       setDataSuccess("");
+      return;
+    }
+
+    if (demoMode) {
+      const summary = demoCandidateSummary(
+        candidateForm.region_label.trim(),
+        candidateForm.topic_query.trim(),
+        minThreshold,
+      );
+      setCandidateSummary(summary);
+      setDataError("");
+      setDataSuccess(summary.threshold_met ? "Demo aggregate ready" : "Privacy threshold not met");
+      return;
+    }
+
+    if (!supabase) {
       return;
     }
 
@@ -2413,6 +2948,42 @@ export default function CivicAgentConsole({
         </div>
       ) : null}
 
+      {demoMode && activeDemoPersona ? (
+        <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50/80 p-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <FieldLabel>Bay Area demo residents</FieldLabel>
+              <p className="mt-1 text-sm font-semibold text-zinc-950">
+                {activeDemoPersona.displayName} - {activeDemoPersona.homeRegion}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-zinc-600">
+                {activeDemoPersona.background}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {BAY_AREA_DEMO_PERSONAS.map((persona) => (
+                <button
+                  className={`rounded-md px-2.5 py-1.5 text-xs font-medium ring-1 ${
+                    persona.id === activeDemoPersona.id
+                      ? "bg-zinc-950 text-white ring-zinc-950"
+                      : "bg-white text-zinc-700 ring-teal-200 hover:text-teal-700"
+                  }`}
+                  key={persona.id}
+                  onClick={() => {
+                    window.localStorage.setItem(DEMO_MODE_STORAGE_KEY, "bay-area");
+                    window.localStorage.setItem(DEMO_PERSONA_STORAGE_KEY, persona.id);
+                    setDemoPersonaId(persona.id);
+                  }}
+                  type="button"
+                >
+                  {persona.displayName}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {isAuthChecking ? (
         <div className="mt-4 flex min-h-[420px] items-center justify-center rounded-lg border border-zinc-200/80 bg-zinc-50 p-6">
           <div className="flex flex-col items-center gap-3 text-center">
@@ -2592,7 +3163,7 @@ export default function CivicAgentConsole({
                   onClick={handleSignOut}
                   type="button"
                 >
-                  Sign out
+                  {demoMode ? "Exit demo" : "Sign out"}
                 </button>
               </div>
             </div>
@@ -3323,7 +3894,7 @@ export default function CivicAgentConsole({
                       onClick={() => {
                         if (brief && activeEvent) {
                           setAdvocacyDraft(
-                            buildAdvocacyDraft(activeEvent, brief, context, draftType),
+                            buildAdvocacyDraft(activeEvent, brief, agentContext, draftType),
                           );
                         }
                       }}
