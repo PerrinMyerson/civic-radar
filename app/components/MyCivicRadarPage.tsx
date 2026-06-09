@@ -23,6 +23,24 @@ type MyCivicRadarPageProps = {
   homeHref?: string;
 };
 
+const BAY_AREA_DEMO_STORAGE_KEY = "civic-radar:bay-area-demo";
+const DEFAULT_CIVIC_DATA_URL = "/api/civic?limit=12";
+const BAY_AREA_DEMO_DATA_URL = "/api/civic?lat=37.7749&lng=-122.4194&limit=12";
+
+function isBayAreaDemoMode() {
+  const params = new URLSearchParams(window.location.search);
+
+  if (params.get("demo") === "bay-area" || params.get("demo") === "1") {
+    return true;
+  }
+
+  try {
+    return window.localStorage.getItem(BAY_AREA_DEMO_STORAGE_KEY) === "bay-area";
+  } catch {
+    return false;
+  }
+}
+
 export default function MyCivicRadarPage({
   homeHref = "/",
 }: MyCivicRadarPageProps) {
@@ -35,7 +53,9 @@ export default function MyCivicRadarPage({
     setError("");
 
     try {
-      const requestUrl = window.__CIVIC_DATA_URL__ ?? "/api/civic?limit=12";
+      const requestUrl =
+        window.__CIVIC_DATA_URL__ ??
+        (isBayAreaDemoMode() ? BAY_AREA_DEMO_DATA_URL : DEFAULT_CIVIC_DATA_URL);
       const response = await fetch(requestUrl, {
         cache: "no-store",
       });
